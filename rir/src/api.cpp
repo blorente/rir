@@ -119,8 +119,12 @@ REXPORT SEXP rir_analysis_liveness(SEXP what) {
 
 // startup ---------------------------------------------------------------------
 
+extern void compiler_tests();
+void tests() { compiler_tests(); };
+
 bool startup() {
     initializeRuntime(rir_compile, Optimizer::reoptimizeFunction);
+    tests();
     return true;
 }
 
