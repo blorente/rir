@@ -42,13 +42,15 @@ void Verifier::verify(Instruction* i, BB* bb) {
                       << " which is not a subtype of " << t << "\n";
             assert(false);
         }
-        if (v->bb() != bb) {
-            std::cerr << "Error at instruction '";
-            i->print(std::cerr);
-            std::cerr << "': Value ";
-            v->printRef(std::cerr);
-            std::cerr << " does not come from the same BB\n";
-            assert(false);
+        if (!Phi::cast(i)) {
+            if (v->bb() != bb) {
+                std::cerr << "Error at instruction '";
+                i->print(std::cerr);
+                std::cerr << "': Value ";
+                v->printRef(std::cerr);
+                std::cerr << " does not come from the same BB\n";
+                assert(false);
+            }
         }
     });
 }

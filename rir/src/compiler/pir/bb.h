@@ -34,18 +34,16 @@ class BB {
         return 0;
     }
 
-    Instruction* last() { return instr.back(); }
+    Instruction* last() {
+        assert(instr.size() > 0);
+        return instr.back();
+    }
 
     std::vector<Instruction*> instr;
     BB* next0 = nullptr;
     BB* next1 = nullptr;
 
     void print(std::ostream& = std::cout);
-
-    BB* createNext(unsigned id) {
-        next0 = new BB(id);
-        return next0;
-    }
 };
 
 inline BB& operator<<(BB& bb, Instruction* i) {

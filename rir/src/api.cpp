@@ -117,6 +117,18 @@ REXPORT SEXP rir_analysis_liveness(SEXP what) {
     return R_NilValue;
 }
 
+#include "compiler/pir_compiler.h"
+
+REXPORT SEXP pir_compile(SEXP what) {
+    if (!isValidClosureSEXP(what))
+        Rf_error("not a compiled closure");
+    SEXP formals = FORMALS(what);
+    ::Function* f = isValidClosureSEXP(what);
+    PirCompiler cmp;
+    cmp.compileFunction(f, formals);
+    return R_NilValue;
+}
+
 // startup ---------------------------------------------------------------------
 
 extern void compiler_tests();

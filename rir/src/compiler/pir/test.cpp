@@ -14,9 +14,6 @@ extern void compiler_tests() {
     Builder b(f);
     auto c = b(new LdConst(R_NilValue));
     b(new StVar("x", c, e));
-
-    b.createNext();
-
     auto l = b(new LdVar("x", e));
     auto k = b(new ChkMissing(l));
 
@@ -30,9 +27,10 @@ extern void compiler_tests() {
         pb(new Return(k));
     }
 
-    auto arg1 = b(new LdArg(arg1p, e));
+    auto arg1 = b(new MkArg(arg1p, e));
     auto call = b(new Call<2>(e, fun, {{arg1, k}}));
-    auto val = b(new Force(call));
+    auto mval = b(new Force(call));
+    auto val = b(new ChkMissing(mval));
 
     b(new Return(val));
 

@@ -43,11 +43,11 @@ void LdConst::printRhs(std::ostream& out) {
 void Branch::printRhs(std::ostream& out) {
     out << "branch ";
     arg<0>()->printRef(out);
-    out << " " << bb()->next0->id << " " << bb()->next1->id;
+    out << ", BB" << bb()->next0->id << ", BB" << bb()->next1->id;
 }
 
-void LdArg::printRhs(std::ostream& out) {
-    out << "ldarg " << *prom << " " << *env;
+void MkArg::printRhs(std::ostream& out) {
+    out << "mkarg " << *prom << " " << *env;
 }
 }
 }

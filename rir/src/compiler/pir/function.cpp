@@ -19,5 +19,12 @@ Promise* Function::createProm() {
     promise.push_back(p);
     return p;
 }
+
+Function::~Function() {
+    for (auto p : promise)
+        delete p;
+    for (auto p : default_arg)
+        delete p;
+}
 }
 }

@@ -14,6 +14,7 @@ enum class RType : uint8_t {
     prom,
     arg,
     symbol,
+    logical,
     voyd,
     test,
     any,
@@ -40,7 +41,8 @@ inline bool subtype(RType a, RType b) {
     case RType::value:
         return b == RType::arg || b == RType::value;
     case RType::symbol:
-        return b == RType::symbol || b == RType::value;
+    case RType::logical:
+        return b == RType::value;
     case RType::unused:
         assert(false);
     }
@@ -76,6 +78,9 @@ inline std::ostream& operator<<(std::ostream& out, RType t) {
         break;
     case RType::symbol:
         out << "sym";
+        break;
+    case RType::logical:
+        out << "lgl";
         break;
     case RType::unused:
         assert(false);

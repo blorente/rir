@@ -19,8 +19,11 @@
     V(LdConst)                                                                 \
     V(StVar)                                                                   \
     V(Branch)                                                                  \
+    V(Phi)                                                                     \
+    V(AsLogical)                                                               \
+    V(AsTest)                                                                  \
     V(Return)                                                                  \
-    V(LdArg)                                                                   \
+    V(MkArg)                                                                   \
     V(ChkMissing)                                                              \
     V(Call)                                                                    \
     V(Force)
@@ -43,7 +46,7 @@ class Instruction : public Value {
     BB* bb_;
     BB* bb() override { return bb_; }
 
-    Instruction(ITag tag, RType t) : Value(t), tag(tag) {}
+    Instruction(ITag tag, RType t) : Value(t, Kind::instruction), tag(tag) {}
     virtual ~Instruction() {}
 
     Id id();
@@ -110,6 +113,79 @@ class AnInstruction : public Instruction {
 
     AnInstruction(RType return_type, const std::array<RType, ARGS>& at)
         : Instruction(class_tag, return_type), arg_type(at) {}
+
+    static Base* cast(Value* v) {
+        if (v->kind == Kind::instruction)
+            return cast(static_cast<Instruction*>(v));
+        return nullptr;
+    }
+
+    static Base* cast(Instruction* i) {
+        if (i->tag == class_tag)
+            return static_cast<Base*>(i);
+        return nullptr;
+    }
+};
+
+template <ITag class_tag, class Base>
+class VarArgInstruction : public Instruction {
+    std::vector<Value*> arg_;
+
+  public:
+    virtual unsigned arguments() const { return arg_.size(); }
+
+    VarArgInstruction(VarArgInstruction&) = delete;
+    void operator=(VarArgInstruction&) = delete;
+    VarArgInstruction() = delete;
+
+    std::vector<RType> arg_type;
+
+    Value* arg(unsigned pos, Value* v) override {
+        assert(pos < arg_.size() && "This instruction has less arguments");
+        arg_[pos] = v;
+        return v;
+    }
+
+    Value* arg(unsigned pos) override {
+        assert(pos < arg_.size() && "This instruction has less arguments");
+        return arg_[pos];
+    }
+
+    void push_arg(Value* a) {
+        assert(arg_.size() == arg_type.size());
+        arg_type.push_back(a->type);
+        arg_.push_back(a);
+    }
+
+    void push_arg(RType t, Value* a) {
+        assert(arg_.size() == arg_type.size());
+        arg_type.push_back(t);
+        arg_.push_back(a);
+    }
+
+    void each_arg(arg_iterator it) override {
+        assert(arg_.size() == arg_type.size());
+        for (unsigned i = 0; i < arguments(); ++i) {
+            Value* v = arg(i);
+            RType t = arg_type[i];
+            it(v, t);
+        }
+    }
+
+    VarArgInstruction(RType return_type, const std::vector<RType>& at,
+                      const std::vector<Value*> arg)
+        : Instruction(class_tag, return_type), arg_type(at), arg_(arg) {
+        assert(arg_.size() == arg_type.size());
+    }
+
+    VarArgInstruction(RType return_type, const std::vector<RType>& at)
+        : Instruction(class_tag, return_type), arg_type(at) {}
+
+    static Base* cast(Value* v) {
+        if (v->kind == Kind::instruction)
+            return cast(static_cast<Instruction*>(v));
+        return nullptr;
+    }
 
     static Base* cast(Instruction* i) {
         if (i->tag == class_tag)
@@ -218,11 +294,11 @@ class Return : public AnInstruction<ITag::Return, Return, 1> {
 };
 
 class Promise;
-class LdArg : public AnInstruction<ITag::LdArg, LdArg, 0> {
+class MkArg : public AnInstruction<ITag::MkArg, MkArg, 0> {
   public:
     Promise* prom;
     Env* env;
-    LdArg(Promise* prom, Env* env)
+    MkArg(Promise* prom, Env* env)
         : AnInstruction(RType::prom, {}), prom(prom), env(env) {}
     void printRhs(std::ostream& out) override;
 };
@@ -266,13 +342,52 @@ class Call : public AnInstruction<ITag::Call, Call<ARGS>, ARGS + 1> {
 
 class Force : public AnInstruction<ITag::Force, Force, 1> {
   public:
-    Force(Value* in) : AnInstruction(RType::value, {{RType::any}}) {
+    Force(Value* in) : AnInstruction(RType::maybeVal, {{RType::any}}) {
         arg<0>(in);
     }
 
     void printRhs(std::ostream& out) override {
         out << "force ";
         arg<0>()->printRef(out);
+    }
+};
+
+class AsLogical : public AnInstruction<ITag::AsLogical, AsLogical, 1> {
+  public:
+    AsLogical(Value* in) : AnInstruction(RType::logical, {{RType::value}}) {
+        arg<0>(in);
+    }
+
+    void printRhs(std::ostream& out) override {
+        out << "as_logical ";
+        arg<0>()->printRef(out);
+    }
+};
+
+class AsTest : public AnInstruction<ITag::AsTest, AsTest, 1> {
+  public:
+    AsTest(Value* in) : AnInstruction(RType::test, {{RType::logical}}) {
+        arg<0>(in);
+    }
+
+    void printRhs(std::ostream& out) override {
+        out << "as_test ";
+        arg<0>()->printRef(out);
+    }
+};
+
+class Phi : public VarArgInstruction<ITag::Phi, Phi> {
+  public:
+    Phi() : VarArgInstruction(RType::any, {}) {}
+
+    void printRhs(std::ostream& out) override {
+        out << "φ(";
+        for (unsigned i = 0; i < arguments() - 1; ++i) {
+            this->arg(i)->printRef(out);
+            out << ", ";
+        }
+        this->arg(arguments() - 1)->printRef(out);
+        out << ")";
     }
 };
 }
