@@ -4,6 +4,7 @@
 #include "pir/builder.h"
 #include "pir/env.h"
 #include "pir/function.h"
+#include "pir/insert_cast.h"
 #include "pir/instruction.h"
 #include "pir/verifier.h"
 
@@ -30,16 +31,11 @@ class FunctionCompiler {
     };
 
     void push(pir::Value* v) { m.stack.push_back(v); }
+    pir::Value* top() { return m.stack.back(); }
     pir::Value* pop() {
         auto v = m.stack.back();
         m.stack.pop_back();
         return v;
-    }
-    pir::Value* pop(RType t) {
-        pir::Value* v = pop();
-        if (subtype(v->type, t))
-            return v;
-        return cast(v, t);
     }
     bool empty() { return m.stack.empty(); }
 
@@ -60,30 +56,6 @@ class FunctionCompiler {
         end = src->body()->endCode();
     }
 
-    pir::Value* cast(pir::Value* v, RType t) {
-        if (subtype(v->type, t))
-            return v;
-        if (t == RType::value) {
-            if (v->type == RType::maybeVal) {
-                return b(new pir::ChkMissing(v));
-            }
-            if (v->type == RType::any) {
-                return b(new pir::ChkMissing(b(new pir::Force(v))));
-            }
-        }
-        if (t == RType::maybeVal) {
-            if (v->type == RType::any) {
-                return b(new pir::Force(v));
-            }
-        }
-        if (v->type == RType::logical && t == RType::test) {
-            return b(new pir::AsTest(v));
-        }
-        std::cerr << "Cannot cast " << v->type << " to " << t << "\n";
-        assert(false);
-        return v;
-    }
-
     void run(BC bc) {
         pir::Value* v;
         switch (bc.bc) {
@@ -97,15 +69,18 @@ class FunctionCompiler {
                 push(b(new pir::LdVar(bc.immediateConst(), f->env)));
             break;
         case Opcode::stvar_:
-            v = pop(RType::value);
+            v = pop();
             m.env_analysis[bc.immediateConst()] = v;
             b(new pir::StVar(bc.immediateConst(), v, f->env));
             break;
         case Opcode::ret_:
-            b(new pir::Return(pop(RType::value)));
+            b(new pir::Return(pop()));
             break;
         case Opcode::asbool_:
-            push(b(new pir::AsLogical(pop(RType::value))));
+            push(b(new pir::AsLogical(pop())));
+            break;
+        case Opcode::ldfun_:
+            push(b(new pir::LdFun(bc.immediateConst(), f->env)));
             break;
         case Opcode::guard_fun_:
             std::cout << "warn: guard ignored "
@@ -113,6 +88,24 @@ class FunctionCompiler {
                              Pool::get(bc.immediate.guard_fun_args.name)))
                       << "\n";
             break;
+        case Opcode::dup_:
+            push(top());
+            break;
+        case Opcode::set_shared_:
+            // TODO
+            break;
+        case Opcode::invisible_:
+            // TODO
+            break;
+        case Opcode::call_: {
+            unsigned n = bc.immediate.call_args.nargs;
+            if (n == 0) {
+                push(b(new pir::Call(f->env, pop(), {})));
+            } else {
+                assert(false);
+            }
+            break;
+        }
         default:
             std::cerr << "Cannot compile Function. Unsupported bc\n";
             bc.print();
@@ -157,7 +150,7 @@ class FunctionCompiler {
             for (size_t i = 0; i < m.stack_size(); ++i) {
                 auto v = pop();
                 auto p = new pir::Phi;
-                *s.entry << p;
+                s.entry->append(p);
                 p->push_arg(v);
                 s.stack.push_front(p);
             }
@@ -211,7 +204,7 @@ class FunctionCompiler {
                 }
                 // Conditional jump
                 Opcode* fallpc = BC::next(m.pc);
-                Value* v = pop(RType::test);
+                Value* v = pop();
                 b(new pir::Branch(v));
 
                 BB* branch = b.createBB();
@@ -241,6 +234,9 @@ class FunctionCompiler {
             BC::advance(&m.pc);
         }
         assert(empty());
+        pir::InsertCast c(f->entry);
+        c();
+
         pir::Verifier v(f);
         v();
     }

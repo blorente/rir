@@ -17,13 +17,17 @@ void Verifier::operator()() {
 void Verifier::verify(BB* bb) {
     for (auto i : bb->instr)
         verify(i, bb);
-    Instruction* last = bb->last();
-    if ((Branch::cast(last)))
-        assert(bb->next0 && bb->next1);
-    else if ((Return::cast(last)))
-        assert(!bb->next0 && !bb->next1);
-    else
+    if (bb->instr.empty()) {
         assert(bb->next0 && !bb->next1);
+    } else {
+        Instruction* last = bb->last();
+        if ((Branch::cast(last)))
+            assert(bb->next0 && bb->next1);
+        else if ((Return::cast(last)))
+            assert(!bb->next0 && !bb->next1);
+        else
+            assert(bb->next0 && !bb->next1);
+    }
 }
 
 void Verifier::verify(Promise* p) {

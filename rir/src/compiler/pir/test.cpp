@@ -28,7 +28,7 @@ extern void compiler_tests() {
     }
 
     auto arg1 = b(new MkArg(arg1p, e));
-    auto call = b(new Call<2>(e, fun, {{arg1, k}}));
+    auto call = b(new Call(e, fun, {{arg1, k}}));
     auto mval = b(new Force(call));
     auto val = b(new ChkMissing(mval));
 

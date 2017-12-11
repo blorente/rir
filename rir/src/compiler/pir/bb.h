@@ -39,18 +39,19 @@ class BB {
         return instr.back();
     }
 
-    std::vector<Instruction*> instr;
     BB* next0 = nullptr;
     BB* next1 = nullptr;
 
+    void append(Instruction* i) {
+        instr.push_back(i);
+        i->bb_ = this;
+    }
+
     void print(std::ostream& = std::cout);
+
+    std::vector<Instruction*> instr;
 };
 
-inline BB& operator<<(BB& bb, Instruction* i) {
-    i->bb_ = &bb;
-    bb.instr.push_back(i);
-    return bb;
-}
 }
 }
 

@@ -5,86 +5,106 @@
 #include <cstdint>
 #include <iostream>
 
+#include "utils/Bitset.h"
+
 namespace rir {
 namespace pir {
 
-enum class RType : uint8_t {
+enum class RBaseType : uint8_t {
     unused,
-    value,
-    prom,
-    arg,
-    symbol,
+
+    //                                          maybeVal (val?)   arg   any
+
+    symbol, // Value types              X                 X     X
     logical,
-    voyd,
-    test,
-    any,
-    maybeVal,
     closure,
+
+    missing, // R_MissingArg             X                       X
+
+    prom, // Unevaluated promise                        X     X
+
+    voyd, // void
+
+    test, // machine boolean
+
+    /* unused */ max
 };
 
-inline bool subtype(RType a, RType b) {
-    if (a == b)
-        return true;
-    if (b == RType::any)
-        return true;
+typedef BitSet<uint8_t, RBaseType> RType;
 
-    switch (a) {
-    case RType::voyd:
-    case RType::closure:
-    case RType::test:
-    case RType::arg:
-    case RType::any:
-    case RType::maybeVal:
-        return false;
-    case RType::prom:
-        return b == RType::arg;
-    case RType::value:
-        return b == RType::arg || b == RType::value;
-    case RType::symbol:
-    case RType::logical:
-        return b == RType::value;
-    case RType::unused:
-        assert(false);
+struct RTypes {
+    static RType val() {
+        static RType v = RType(RBaseType::symbol) | RType(RBaseType::logical) |
+                         RType(RBaseType::closure);
+        return v;
     }
-    assert(false);
-    return false;
+    static RType arg() {
+        static RType v = RType(RBaseType::prom) | val();
+        return v;
+    }
+    static RType maybeVal() {
+        static RType v = RType(RBaseType::missing) | val();
+        return v;
+    }
+    static RType any() {
+        static RType v = RType(RBaseType::prom) | maybeVal();
+        return v;
+    }
+};
+
+inline bool subtype(RType a, RType b) { return b.includes(a); }
+
+inline std::ostream& operator<<(std::ostream& out, RBaseType t) {
+    switch (t) {
+    case RBaseType::voyd:
+        out << "void";
+        break;
+    case RBaseType::closure:
+        out << "cls";
+        break;
+    case RBaseType::prom:
+        out << "prm";
+        break;
+    case RBaseType::test:
+        out << "t";
+        break;
+    case RBaseType::symbol:
+        out << "sym";
+        break;
+    case RBaseType::logical:
+        out << "lgl";
+        break;
+    case RBaseType::missing:
+        out << "miss";
+        break;
+    case RBaseType::unused:
+    case RBaseType::max:
+        assert(false);
+        break;
+    }
+    return out;
 }
 
 inline std::ostream& operator<<(std::ostream& out, RType t) {
-    switch (t) {
-    case RType::voyd:
-        out << "void";
-        break;
-    case RType::closure:
-        out << "cls";
-        break;
-    case RType::any:
-        out << "any";
-        break;
-    case RType::value:
+    if (t == RTypes::val()) {
         out << "val";
-        break;
-    case RType::arg:
+    } else if (t == RTypes::arg()) {
         out << "arg";
-        break;
-    case RType::prom:
-        out << "prm";
-        break;
-    case RType::maybeVal:
+    } else if (t == RTypes::maybeVal()) {
         out << "val?";
-        break;
-    case RType::test:
-        out << "t";
-        break;
-    case RType::symbol:
-        out << "sym";
-        break;
-    case RType::logical:
-        out << "lgl";
-        break;
-    case RType::unused:
-        assert(false);
-        break;
+    } else if (t == RTypes::any()) {
+        out << "any";
+    } else {
+        size_t found = 0;
+        for (RBaseType bt = (RBaseType)0; bt != RBaseType::max;
+             bt = (RBaseType)((size_t)bt + 1)) {
+            if (t.includes(bt)) {
+                ++found;
+                out << bt;
+                if (found < t.size())
+                    out << ", ";
+            }
+        }
     }
     return out;
 }
