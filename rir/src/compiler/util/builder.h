@@ -1,18 +1,21 @@
 #ifndef COMPILER_BUILDER_H
 #define COMPILER_BUILDER_H
 
-#include "function.h"
+#include "../pir/bb.h"
+#include "../pir/pir.h"
 
 namespace rir {
 namespace pir {
 
 class Builder {
   public:
-    Code* f;
-    Env* e;
+    Function* function;
+    Code* code;
+    Env* env;
     BB* bb;
     unsigned id;
-    Builder(Code* f) : f(f), e(f->env), bb(f->entry), id(bb->id + 1) {}
+    Builder(Function* fun, Code* code, Env* env, BB* bb)
+        : function(fun), code(code), env(env), bb(bb), id(bb->id + 1) {}
 
     template <class T>
     T* operator()(T* i) {

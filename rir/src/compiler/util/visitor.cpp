@@ -1,29 +1,24 @@
-#ifndef COMPILER_VISITOR_H
-#define COMPILER_VISITOR_H
+#include "visitor.h"
+#include "../pir/pir_impl.h"
 
-#include "bb.h"
+namespace {
+using namespace rir::pir;
 
-#include <set>
-
-namespace rir {
-namespace pir {
-
-template <class Receiver>
-class Visitor {
-    Receiver* r;
-    BB* cur;
-
+struct BBVisitor {
     std::set<BB*> todo;
     std::set<BB*> done;
+    BB* cur;
+    Visitor::BBReturnAction action;
 
-  public:
-    Visitor(Receiver* r) : r(r) {}
+    BBVisitor(Visitor::BBReturnAction action) : action(action) {}
 
-    void operator()(BB* start) {
-        assert(todo.empty());
+    void clear() {
         todo.clear();
         done.clear();
+    }
 
+    bool operator()(BB* start) {
+        assert(todo.empty());
         cur = start;
 
         while (cur) {
@@ -49,13 +44,31 @@ class Visitor {
                 }
             }
 
-            r->accept(cur);
+            if (!action(cur)) {
+                clear();
+                return false;
+            }
 
             cur = next;
         }
+        return true;
     }
 };
 }
+
+namespace rir {
+namespace pir {
+
+bool Visitor::check(BB* bb, BBReturnAction action) {
+    BBVisitor v(action);
+    return v(bb);
 }
 
-#endif
+void Visitor::run(BB* bb, BBAction action) {
+    check(bb, [&](BB* bb) -> bool {
+        action(bb);
+        return true;
+    });
+}
+}
+}

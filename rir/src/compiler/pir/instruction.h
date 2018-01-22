@@ -2,7 +2,7 @@
 #define COMPILER_INSTRUCTION_H
 
 #include "R/r.h"
-#include "env.h"
+#include "pir.h"
 #include "value.h"
 
 #include <array>
@@ -24,7 +24,10 @@
     V(AsTest)                                                                  \
     V(Return)                                                                  \
     V(MkArg)                                                                   \
+    V(MkCls)                                                                   \
+    V(MkClsFun)                                                                \
     V(ChkMissing)                                                              \
+    V(ChkClosure)                                                              \
     V(Call)                                                                    \
     V(Force)
 
@@ -32,6 +35,7 @@ namespace rir {
 namespace pir {
 
 class BB;
+class Function;
 
 enum class ITag : uint8_t {
 #define V(I) I,
@@ -39,46 +43,116 @@ enum class ITag : uint8_t {
 #undef V
 };
 
+static const char* InstructionName(ITag tag) {
+    switch (tag) {
+#define V(I)                                                                   \
+    case ITag::I:                                                              \
+        return #I;
+        COMPILER_INSTRUCTIONS(V)
+#undef V
+    }
+    assert(false);
+    return "";
+}
+
 class Instruction : public Value {
+  protected:
+    virtual size_t nargs() = 0;
+    virtual Value** args() = 0;
+    virtual const PirType* types() = 0;
+
   public:
+    virtual bool pure() = 0;
+
     typedef std::pair<unsigned, unsigned> Id;
     const ITag tag;
     BB* bb_;
-    BB* bb() override {
+    BB* bb() {
         assert(bb_);
         return bb_;
     }
+    void bb(bbMaybe maybe) override { return maybe(bb()); }
 
-    Instruction(ITag tag, RType t) : Value(t, Kind::instruction), tag(tag) {}
+    Instruction(ITag tag, PirType t) : Value(t, Kind::instruction), tag(tag) {}
     virtual ~Instruction() {}
 
     Id id();
 
-    typedef std::function<void(Value*, RType)> arg_iterator;
-    typedef std::function<Value*(Value*, RType)> arg_map_iterator;
-    virtual void each_arg(arg_iterator it) = 0;
-    virtual void map_arg(arg_map_iterator it) = 0;
+    typedef std::function<void(Value*, PirType)> arg_iterator;
+    typedef std::function<Value*(Value*, PirType)> arg_map_iterator;
 
-    virtual void printRhs(std::ostream& = std::cout) = 0;
+    const char* name() { return InstructionName(tag); }
+
+    virtual void printRhs(std::ostream& out = std::cout) {
+        out << name() << " (";
+        if (nargs() > 0) {
+            for (size_t i = 0; i < nargs() - 1; ++i) {
+                arg(i)->printRef(out);
+                out << ", ";
+            }
+            arg(nargs() - 1)->printRef(out);
+        }
+        out << ")";
+    }
+
     void print(std::ostream& = std::cout);
     void printRef(std::ostream& out) override;
 
-    virtual Value* arg(unsigned pos, Value* v) = 0;
-    virtual Value* arg(unsigned pos) = 0;
+    Value* arg(size_t pos, Value* v) {
+        assert(pos < nargs() && "This instruction has less arguments");
+        args()[pos] = v;
+        return v;
+    }
+
+    Value* arg(size_t pos) {
+        assert(pos < nargs() && "This instruction has less arguments");
+        return args()[pos];
+    }
+
+    void each_arg(arg_iterator it) {
+        for (size_t i = 0; i < nargs(); ++i) {
+            Value* v = arg(i);
+            PirType t = types()[i];
+            it(v, t);
+        }
+    }
+
+    void map_arg(arg_map_iterator it) {
+        for (size_t i = 0; i < nargs(); ++i) {
+            Value* v = arg(i);
+            PirType t = types()[i];
+            arg(i, it(v, t));
+        }
+    }
 };
 
-template <ITag class_tag, class Base, unsigned ARGS>
-class AnInstruction : public Instruction {
-    std::array<Value*, ARGS> arg_;
+class InstructionWithEnv : public Instruction {
+    Env* env_;
 
   public:
-    virtual unsigned arguments() const { return ARGS; }
+    Env* env() { return env_; }
+    InstructionWithEnv(ITag tag, PirType t, Env* env)
+        : Instruction(tag, t), env_(env) {}
+};
+
+template <ITag class_tag, class Base, size_t ARGS, bool PURE,
+          class Super = Instruction>
+class AnInstruction : public Super {
+    std::array<Value*, ARGS> arg_;
+
+  protected:
+    size_t nargs() override { return ARGS; }
+    Value** args() override { return &arg_[0]; }
+    const PirType* types() override { return &arg_type[0]; }
+
+  public:
+    bool pure() override { return PURE; }
 
     AnInstruction(AnInstruction&) = delete;
     void operator=(AnInstruction&) = delete;
     AnInstruction() = delete;
 
-    const std::array<RType, ARGS> arg_type;
+    const std::array<PirType, ARGS> arg_type;
 
     template <unsigned pos>
     Value* arg(Value* v) {
@@ -93,39 +167,29 @@ class AnInstruction : public Instruction {
         return arg_[pos];
     }
 
-    Value* arg(unsigned pos, Value* v) override {
-        assert(pos < ARGS && "This instruction has less arguments");
-        arg_[pos] = v;
-        return v;
+    template <unsigned pos>
+    PirType type() {
+        static_assert(pos < ARGS, "This instruction has less arguments");
+        return arg_type[pos];
     }
 
-    Value* arg(unsigned pos) override {
-        assert(pos < ARGS && "This instruction has less arguments");
-        return arg_[pos];
-    }
-
-    void each_arg(arg_iterator it) override {
-        for (unsigned i = 0; i < ARGS; ++i) {
-            Value* v = arg(i);
-            RType t = arg_type[i];
-            it(v, t);
-        }
-    }
-
-    void map_arg(arg_map_iterator it) override {
-        for (unsigned i = 0; i < ARGS; ++i) {
-            Value* v = arg(i);
-            RType t = arg_type[i];
-            arg(i, it(v, t));
-        }
-    }
-
-    AnInstruction(RType return_type, const std::array<RType, ARGS>& at,
+    AnInstruction(PirType return_type, const std::array<PirType, ARGS>& at,
                   const std::array<Value*, ARGS>& arg)
-        : Instruction(class_tag, return_type), arg_type(at), arg_(arg) {}
+        : Super(class_tag, return_type), arg_(arg), arg_type(at) {}
 
-    AnInstruction(RType return_type, const std::array<RType, ARGS>& at)
-        : Instruction(class_tag, return_type), arg_type(at) {}
+    AnInstruction(PirType return_type)
+        : Super(class_tag, return_type), arg_type({}) {
+        static_assert(ARGS == 0, "Missing arguments");
+    }
+
+    AnInstruction(PirType return_type, const std::array<PirType, ARGS>& at,
+                  const std::array<Value*, ARGS>& arg, Env* env)
+        : Super(class_tag, return_type, env), arg_(arg), arg_type(at) {}
+
+    AnInstruction(PirType return_type, Env* env)
+        : Super(class_tag, return_type, env), arg_type({}) {
+        static_assert(ARGS == 0, "Missing arguments");
+    }
 
     static Base* cast(Value* v) {
         if (v->kind == Kind::instruction)
@@ -140,29 +204,22 @@ class AnInstruction : public Instruction {
     }
 };
 
-template <ITag class_tag, class Base>
-class VarArgInstruction : public Instruction {
+template <ITag class_tag, class Base, bool PURE, class Super = Instruction>
+class VarArgInstruction : public Super {
     std::vector<Value*> arg_;
+    std::vector<PirType> arg_type;
+
+  protected:
+    size_t nargs() override { return arg_.size(); }
+    Value** args() override { return arg_.data(); }
+    const PirType* types() override { return arg_type.data(); }
 
   public:
-    virtual unsigned arguments() const { return arg_.size(); }
+    bool pure() override { return PURE; }
 
     VarArgInstruction(VarArgInstruction&) = delete;
     void operator=(VarArgInstruction&) = delete;
     VarArgInstruction() = delete;
-
-    std::vector<RType> arg_type;
-
-    Value* arg(unsigned pos, Value* v) override {
-        assert(pos < arg_.size() && "This instruction has less arguments");
-        arg_[pos] = v;
-        return v;
-    }
-
-    Value* arg(unsigned pos) override {
-        assert(pos < arg_.size() && "This instruction has less arguments");
-        return arg_[pos];
-    }
 
     void push_arg(Value* a) {
         assert(arg_.size() == arg_type.size());
@@ -170,38 +227,17 @@ class VarArgInstruction : public Instruction {
         arg_.push_back(a);
     }
 
-    void push_arg(RType t, Value* a) {
+    void push_arg(PirType t, Value* a) {
         assert(arg_.size() == arg_type.size());
+        assert(t >= a->type);
         arg_type.push_back(t);
         arg_.push_back(a);
     }
 
-    void each_arg(arg_iterator it) override {
-        assert(arg_.size() == arg_type.size());
-        for (unsigned i = 0; i < arguments(); ++i) {
-            Value* v = arg(i);
-            RType t = arg_type[i];
-            it(v, t);
-        }
-    }
+    VarArgInstruction(PirType return_type) : Super(class_tag, return_type) {}
 
-    void map_arg(arg_map_iterator it) override {
-        assert(arg_.size() == arg_type.size());
-        for (unsigned i = 0; i < arguments(); ++i) {
-            Value* v = arg(i);
-            RType t = arg_type[i];
-            arg(i, it(v, t));
-        }
-    }
-
-    VarArgInstruction(RType return_type, const std::vector<RType>& at,
-                      const std::vector<Value*> arg)
-        : Instruction(class_tag, return_type), arg_type(at), arg_(arg) {
-        assert(arg_.size() == arg_type.size());
-    }
-
-    VarArgInstruction(RType return_type, const std::vector<RType>& at)
-        : Instruction(class_tag, return_type), arg_type(at) {}
+    VarArgInstruction(PirType return_type, Env* env)
+        : Super(class_tag, return_type, env) {}
 
     static Base* cast(Value* v) {
         if (v->kind == Kind::instruction)
@@ -218,188 +254,149 @@ class VarArgInstruction : public Instruction {
 
 extern std::ostream& operator<<(std::ostream& out, Instruction::Id id);
 
-class LdConst : public AnInstruction<ITag::LdConst, LdConst, 0> {
+class LdConst : public AnInstruction<ITag::LdConst, LdConst, 0, true> {
   public:
-    LdConst(SEXP c, RType t) : AnInstruction(t, {}), c(c) {}
-    LdConst(SEXP c) : AnInstruction(RTypes::val(), {}), c(c) {}
+    LdConst(SEXP c, PirType t) : AnInstruction(t), c(c) {}
+    LdConst(SEXP c) : AnInstruction(PirType::val()), c(c) {}
     SEXP c;
     void printRhs(std::ostream& out) override;
 };
 
-class LdFun : public AnInstruction<ITag::LdFun, LdFun, 0> {
+class LdFun
+    : public AnInstruction<ITag::LdFun, LdFun, 0, false, InstructionWithEnv> {
   public:
-    SEXP name;
-    Env* env;
+    SEXP varName;
 
     LdFun(const char* name, Env* env)
-        : AnInstruction(RBaseType::closure, {}), name(Rf_install(name)),
-          env(env) {}
+        : AnInstruction(RType::closure, env), varName(Rf_install(name)) {}
     LdFun(SEXP name, Env* env)
-        : AnInstruction(RBaseType::closure, {}), name(name), env(env) {
+        : AnInstruction(RType::closure, env), varName(name) {
         assert(TYPEOF(name) == SYMSXP);
-    }
-
-    void printRhs(std::ostream& out) override {
-        out << "ldfun " << CHAR(PRINTNAME(name)) << ", " << *env;
     }
 };
 
-class LdVar : public AnInstruction<ITag::LdVar, LdVar, 0> {
+class LdVar
+    : public AnInstruction<ITag::LdVar, LdVar, 0, true, InstructionWithEnv> {
   public:
-    SEXP name;
-    Env* env;
+    SEXP varName;
 
     LdVar(const char* name, Env* env)
-        : AnInstruction(RTypes::maybeVal(), {}), name(Rf_install(name)),
-          env(env) {}
+        : AnInstruction(PirType::any(), env), varName(Rf_install(name)) {}
     LdVar(SEXP name, Env* env)
-        : AnInstruction(RTypes::maybeVal(), {}), name(name), env(env) {
+        : AnInstruction(PirType::any(), env), varName(name) {
         assert(TYPEOF(name) == SYMSXP);
     }
 
-    void printRhs(std::ostream& out) override {
-        out << "ldvar " << CHAR(PRINTNAME(name)) << ", " << *env;
-    }
-};
-
-class ChkMissing : public AnInstruction<ITag::ChkMissing, ChkMissing, 1> {
-  public:
-    ChkMissing(Value* in)
-        : AnInstruction(RTypes::val(), {{RTypes::maybeVal()}}) {
-        arg<0>(in);
-    }
-
-    void printRhs(std::ostream& out) override {
-        out << "chk_missing ";
-        arg<0>()->printRef(out);
-    }
-};
-
-class StVar : public AnInstruction<ITag::StVar, StVar, 1> {
-  public:
-    StVar(SEXP name, Value* val, Env* env)
-        : AnInstruction(RBaseType::voyd, {{RTypes::val()}}), name(name),
-          env(env) {
-        arg<0>(val);
-    }
-    StVar(const char* name, Value* val, Env* env)
-        : AnInstruction(RBaseType::voyd, {{RTypes::val()}}),
-          name(Rf_install(name)), env(env) {
-        arg<0>(val);
-    }
-
-    SEXP name;
-    Value* val() { return arg<0>(); }
-    Env* env;
-
-    void printRhs(std::ostream& out) override {
-        out << "stvar " << CHAR(PRINTNAME(name)) << ", ";
-        val()->printRef(out);
-        out << ", " << *env;
-    }
-};
-
-class Branch : public AnInstruction<ITag::Branch, Branch, 1> {
-  public:
-    Branch(Value* test) : AnInstruction(RBaseType::voyd, {{RBaseType::test}}) {
-        arg<0>(test);
-    }
     void printRhs(std::ostream& out) override;
 };
 
-class Return : public AnInstruction<ITag::Return, Return, 1> {
+class ChkMissing
+    : public AnInstruction<ITag::ChkMissing, ChkMissing, 1, false> {
   public:
-    Return(Value* ret) : AnInstruction(RBaseType::voyd, {{RTypes::val()}}) {
-        arg<0>(ret);
-    }
-    void printRhs(std::ostream& out) override {
-        out << "return ";
-        arg<0>()->printRef(out);
-    }
+    ChkMissing(Value* in)
+        : AnInstruction(PirType::val(), {{PirType::valOrMissing()}}, {{in}}) {}
+};
+
+class ChkClosure
+    : public AnInstruction<ITag::ChkClosure, ChkClosure, 1, false> {
+  public:
+    ChkClosure(Value* in)
+        : AnInstruction(RType::closure, {{PirType::val()}}, {{in}}) {}
+};
+
+class StVar
+    : public AnInstruction<ITag::StVar, StVar, 1, false, InstructionWithEnv> {
+  public:
+    StVar(SEXP name, Value* val, Env* env)
+        : AnInstruction(PirType::voyd(), {{PirType::val()}}, {{val}}, env),
+          varName(name) {}
+
+    StVar(const char* name, Value* val, Env* env)
+        : AnInstruction(PirType::voyd(), {{PirType::val()}}, {{val}}, env),
+          varName(Rf_install(name)) {}
+
+    SEXP varName;
+    Value* val() { return arg<0>(); }
+
+    void printRhs(std::ostream& out) override;
+};
+
+class Branch : public AnInstruction<ITag::Branch, Branch, 1, true> {
+  public:
+    Branch(Value* test)
+        : AnInstruction(PirType::voyd(), {{NativeType::test}}, {{test}}) {}
+    void printRhs(std::ostream& out) override;
+};
+
+class Return : public AnInstruction<ITag::Return, Return, 1, true> {
+  public:
+    Return(Value* ret)
+        : AnInstruction(PirType::voyd(), {{PirType::val()}}, {{ret}}) {}
 };
 
 class Promise;
-class MkArg : public AnInstruction<ITag::MkArg, MkArg, 0> {
+class MkArg
+    : public AnInstruction<ITag::MkArg, MkArg, 1, true, InstructionWithEnv> {
   public:
     Promise* prom;
-    Env* env;
-    MkArg(Promise* prom, Env* env)
-        : AnInstruction(RBaseType::prom, {}), prom(prom), env(env) {}
+    MkArg(Promise* prom, Value* v, Env* env)
+        : AnInstruction(RType::prom, {{PirType::valOrMissing()}}, {{v}}, env),
+          prom(prom) {}
     void printRhs(std::ostream& out) override;
 };
 
-class Call : public VarArgInstruction<ITag::Call, Call> {
+class MkCls
+    : public AnInstruction<ITag::MkCls, MkCls, 3, true, InstructionWithEnv> {
+  public:
+    MkCls(Value* code, Value* arg, Value* src, Env* parent)
+        : AnInstruction(RType::closure,
+                        {{RType::code, PirType::list(), PirType::any()}},
+                        {{code, arg, src}}, parent) {}
+};
+
+class MkClsFun : public AnInstruction<ITag::MkClsFun, MkClsFun, 0, true,
+                                      InstructionWithEnv> {
+  public:
+    Function* fun;
+    MkClsFun(Function* fun, Env* env)
+        : AnInstruction(RType::closure, env), fun(fun) {}
+    void printRhs(std::ostream& out) override;
+};
+
+class Call
+    : public VarArgInstruction<ITag::Call, Call, false, InstructionWithEnv> {
   public:
     Call(Env* e, Value* fun, const std::vector<Value*>& args)
-        : VarArgInstruction(RTypes::any(), {}) {
-        this->push_arg(RBaseType::closure, fun);
+        : VarArgInstruction(PirType::any(), e) {
+        this->push_arg(RType::closure, fun);
         for (unsigned i = 1; i <= args.size(); ++i)
-            this->push_arg(RTypes::arg(), args[i - 1]);
+            this->push_arg(RType::prom, args[i - 1]);
     }
 
-    void printRhs(std::ostream& out) override {
-        out << "call ";
-        this->arg(0)->printRef(out);
-        out << " (";
-        for (unsigned i = 1; i < arguments() - 1; ++i) {
-            this->arg(i)->printRef(out);
-            out << ", ";
-        }
-        this->arg(arguments() - 1)->printRef(out);
-        out << ")";
-    }
+    void printRhs(std::ostream& out) override;
 };
 
-class Force : public AnInstruction<ITag::Force, Force, 1> {
+class Force : public AnInstruction<ITag::Force, Force, 1, false> {
   public:
-    Force(Value* in) : AnInstruction(RTypes::maybeVal(), {{RTypes::any()}}) {
-        arg<0>(in);
-    }
-
-    void printRhs(std::ostream& out) override {
-        out << "force ";
-        arg<0>()->printRef(out);
-    }
+    Force(Value* in)
+        : AnInstruction(PirType::valOrMissing(), {{PirType::any()}}, {{in}}) {}
 };
 
-class AsLogical : public AnInstruction<ITag::AsLogical, AsLogical, 1> {
+class AsLogical : public AnInstruction<ITag::AsLogical, AsLogical, 1, false> {
   public:
     AsLogical(Value* in)
-        : AnInstruction(RBaseType::logical, {{RTypes::val()}}) {
-        arg<0>(in);
-    }
-
-    void printRhs(std::ostream& out) override {
-        out << "as_logical ";
-        arg<0>()->printRef(out);
-    }
+        : AnInstruction(RType::logical, {{PirType::val()}}, {{in}}) {}
 };
 
-class AsTest : public AnInstruction<ITag::AsTest, AsTest, 1> {
+class AsTest : public AnInstruction<ITag::AsTest, AsTest, 1, true> {
   public:
-    AsTest(Value* in) : AnInstruction(RBaseType::test, {{RBaseType::logical}}) {
-        arg<0>(in);
-    }
-
-    void printRhs(std::ostream& out) override {
-        out << "as_test ";
-        arg<0>()->printRef(out);
-    }
+    AsTest(Value* in)
+        : AnInstruction(NativeType::test, {{RType::logical}}, {{in}}) {}
 };
 
-class Phi : public VarArgInstruction<ITag::Phi, Phi> {
+class Phi : public VarArgInstruction<ITag::Phi, Phi, true> {
   public:
-    Phi() : VarArgInstruction(RTypes::any(), {}) {}
-
-    void printRhs(std::ostream& out) override {
-        out << "φ(";
-        for (unsigned i = 0; i < arguments() - 1; ++i) {
-            this->arg(i)->printRef(out);
-            out << ", ";
-        }
-        this->arg(arguments() - 1)->printRef(out);
-        out << ")";
-    }
+    Phi() : VarArgInstruction(PirType::any()) {}
 };
 }
 }

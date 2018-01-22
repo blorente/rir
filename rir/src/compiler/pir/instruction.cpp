@@ -1,6 +1,5 @@
 #include "instruction.h"
-#include "bb.h"
-#include "promise.h"
+#include "pir_impl.h"
 
 #include "utils/capture_out.h"
 
@@ -17,10 +16,11 @@ extern std::ostream& operator<<(std::ostream& out, Instruction::Id id) {
 }
 
 void Instruction::print(std::ostream& out) {
-    out << type;
-    out << " ";
-    printRef(out);
-    out << " = ";
+    out << type << " ";
+    if (type != PirType::voyd()) {
+        printRef(out);
+        out << " = ";
+    }
     printRhs(out);
 }
 
@@ -37,17 +37,46 @@ void LdConst::printRhs(std::ostream& out) {
     }
     if (val.length() > 0)
         val.pop_back();
-    out << "ldconst " << val;
+    out << name() << " " << val;
 }
 
 void Branch::printRhs(std::ostream& out) {
-    out << "branch ";
+    out << name();
     arg<0>()->printRef(out);
     out << ", BB" << bb()->next0->id << ", BB" << bb()->next1->id;
 }
 
 void MkArg::printRhs(std::ostream& out) {
-    out << "mkarg " << *prom << " " << *env;
+    out << name() << "(";
+    arg<0>()->printRef(out);
+    out << ", " << *prom << ") " << *env();
+}
+
+void MkClsFun::printRhs(std::ostream& out) {
+    out << name() << "(" << *fun << ") " << *env();
+}
+
+void LdVar::printRhs(std::ostream& out) {
+    out << name() << "(" << CHAR(PRINTNAME(varName)) << ")";
+    out << " " << *env();
+}
+
+void StVar::printRhs(std::ostream& out) {
+    out << name() << "(" << CHAR(PRINTNAME(varName)) << ", ";
+    val()->printRef(out);
+    out << ") " << *env();
+}
+
+void Call::printRhs(std::ostream& out) {
+    out << name() << " ";
+    this->arg(0)->printRef(out);
+    out << " (";
+    for (unsigned i = 1; i < nargs() - 1; ++i) {
+        this->arg(i)->printRef(out);
+        out << ", ";
+    }
+    this->arg(nargs() - 1)->printRef(out);
+    out << ") " << *env();
 }
 }
 }

@@ -1,6 +1,4 @@
-#include "bb.h"
-#include "env.h"
-#include "instruction.h"
+#include "pir_impl.h"
 
 #include <iostream>
 
@@ -18,6 +16,16 @@ void BB::print(std::ostream& out) {
     }
     if (next0 && !next1)
         out << "<goto> BB " << next0->id << "\n";
+}
+
+BB::~BB() {
+    for (auto* i : instr)
+        delete i;
+}
+
+void BB::append(Instruction* i) {
+    instr.push_back(i);
+    i->bb_ = this;
 }
 }
 }

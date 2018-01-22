@@ -1,12 +1,14 @@
 #include "module.h"
-#include "function.h"
+#include "pir_impl.h"
 
 namespace rir {
 namespace pir {
 
 void Module::print(std::ostream& out) {
-    for (auto f : function)
+    for (auto f : function) {
         f->print(out);
+        out << "\n";
+    }
 }
 
 Module::~Module() {

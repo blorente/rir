@@ -10,7 +10,7 @@ namespace rir {
 class PirCompiler {
   public:
     pir::Module* m;
-    void compileFunction(Function* f, RList formals);
+    void compileFunction(SEXP);
 };
 }
 

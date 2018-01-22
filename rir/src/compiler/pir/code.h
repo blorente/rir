@@ -1,8 +1,7 @@
 #ifndef COMPILER_CODE_H
 #define COMPILER_CODE_H
 
-#include "bb.h"
-#include "env.h"
+#include "pir.h"
 
 namespace rir {
 namespace pir {
@@ -12,7 +11,7 @@ class Code {
     BB* entry;
     Env* env;
 
-    Code(Env* env) : entry(new BB(0)), env(env) {}
+    Code(Env* env);
     void print(std::ostream& = std::cout);
     ~Code();
 };

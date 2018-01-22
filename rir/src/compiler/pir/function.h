@@ -1,9 +1,9 @@
 #ifndef COMPILER_FUNCTION_H
 #define COMPILER_FUNCTION_H
 
-#include "bb.h"
+#include "R/r.h"
 #include "code.h"
-#include "env.h"
+#include "pir.h"
 
 namespace rir {
 namespace pir {
@@ -28,6 +28,11 @@ class Function : public Code {
     void print(std::ostream& out = std::cout);
 
     Promise* createProm();
+
+    friend std::ostream& operator<<(std::ostream& out, const Function& e) {
+        out << "Func(" << (void*)&e << ")";
+        return out;
+    }
 
     ~Function();
 };

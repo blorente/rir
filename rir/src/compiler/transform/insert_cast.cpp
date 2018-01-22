@@ -1,18 +1,18 @@
 #include "insert_cast.h"
-#include "visitor.h"
+#include "../pir/pir_impl.h"
+#include "../util/visitor.h"
 
 namespace rir {
 namespace pir {
 
-static pir::Instruction* cast(pir::Value* v, RType t) {
-    if (v->type.includes(RBaseType::prom) && !t.includes(RBaseType::prom)) {
+pir::Instruction* InsertCast::cast(pir::Value* v, PirType t) {
+    if (v->type.maybeLazy() && !t.maybeLazy()) {
         return new pir::Force(v);
     }
-    if (v->type.includes(RBaseType::missing) &&
-        !t.includes(RBaseType::missing)) {
+    if (v->type.maybeMissing() && !t.maybeMissing()) {
         return new pir::ChkMissing(v);
     }
-    if (v->type == RBaseType::logical && t == RBaseType::test) {
+    if (v->type == RType::logical && t == NativeType::test) {
         return new pir::AsTest(v);
     }
 
@@ -22,23 +22,22 @@ static pir::Instruction* cast(pir::Value* v, RType t) {
 }
 
 void InsertCast::operator()() {
-    Visitor<InsertCast> visit(this);
-    visit(start);
+    Visitor::run(start, [&](BB* bb) { apply(bb); });
 }
 
-void InsertCast::accept(BB* bb) {
+void InsertCast::apply(BB* bb) {
     for (auto i = bb->instr.begin(); i != bb->instr.end(); ++i) {
         auto instr = *i;
         Phi* p = nullptr;
         if ((p = Phi::cast(instr))) {
-            RType out;
+            PirType out = instr->arg(0)->type;
             instr->each_arg(
-                [&out](Value* v, RType t) -> void { out = out | t; });
+                [&out](Value* v, PirType t) -> void { out = out | t; });
             p->type = out;
         }
-        instr->map_arg([&i, bb](Value* v, RType t) -> Value* {
+        instr->map_arg([&i, bb](Value* v, PirType t) -> Value* {
             size_t added = 0;
-            while (!subtype(v->type, t)) {
+            while (!(t >= v->type)) {
                 auto c = cast(v, t);
                 c->bb_ = bb;
                 v = c;

@@ -1,8 +1,7 @@
 #ifndef COMPILER_PIR_VERIFIER_H
 #define COMPILER_PIR_VERIFIER_H
 
-#include "function.h"
-#include "promise.h"
+#include "../pir/pir.h"
 
 namespace rir {
 namespace pir {
@@ -13,10 +12,9 @@ class Verifier {
   public:
     Verifier(Function* f) : f(f) {}
     void operator()();
-    void verify(BB*);
-    void verify(Instruction*, BB* bb);
-    void verify(Promise*);
-    void accept(BB* b) { verify(b); }
+    bool verify(BB*);
+    bool verify(Instruction*, BB* bb);
+    bool verify(Promise*);
 };
 }
 }

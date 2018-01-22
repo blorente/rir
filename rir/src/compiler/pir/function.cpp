@@ -1,5 +1,5 @@
 #include "function.h"
-#include "promise.h"
+#include "pir_impl.h"
 
 #include <iostream>
 
@@ -7,7 +7,7 @@ namespace rir {
 namespace pir {
 
 void Function::print(std::ostream& out) {
-    out << "Function \n";
+    out << "Function " << this << "(" << *env << ")\n";
     Code::print(out);
     for (auto p : promise) {
         p->print(out);

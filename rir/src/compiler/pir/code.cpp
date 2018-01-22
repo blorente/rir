@@ -1,38 +1,18 @@
 #include "code.h"
-#include "visitor.h"
-
-namespace {
-using namespace rir::pir;
-
-class Deleter {
-  public:
-    Visitor<Deleter> v;
-    Deleter() : v(this) {}
-    void accept(BB* bb) { delete bb; }
-    void operator()(BB* bb) { v(bb); }
-};
-
-class Printer {
-  public:
-    Visitor<Printer> v;
-    std::ostream& out;
-    Printer(std::ostream& out) : v(this), out(out) {}
-    void accept(BB* bb) { bb->print(out); }
-    void operator()(BB* bb) { v(bb); }
-};
-}
+#include "../util/visitor.h"
+#include "pir_impl.h"
 
 namespace rir {
 namespace pir {
 
+Code::Code(Env* env) : entry(new BB(0)), env(env) {}
+
 void Code::print(std::ostream& out) {
-    Printer p(out);
-    p(entry);
+    Visitor::run(entry, [&out](BB* bb) { bb->print(out); });
 }
 
 Code::~Code() {
-    Deleter d;
-    d(entry);
+    Visitor::run(entry, [](BB* bb) { delete bb; });
 }
 }
 }

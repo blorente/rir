@@ -11,6 +11,10 @@ class Instruction;
 
 class Env {
   public:
+    Env* parent;
+
+    Env(Env* parent = nullptr) : parent(parent) {}
+
     std::vector<Instruction*> escape;
     friend std::ostream& operator<<(std::ostream& out, const Env& e) {
         out << "Env(" << (void*)&e << ")";

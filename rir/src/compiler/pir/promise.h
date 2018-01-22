@@ -1,7 +1,7 @@
 #ifndef COMPILER_PROMISE_H
 #define COMPILER_PROMISE_H
 
-#include "function.h"
+#include "code.h"
 
 namespace rir {
 namespace pir {

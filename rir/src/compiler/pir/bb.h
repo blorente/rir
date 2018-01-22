@@ -1,7 +1,7 @@
 #ifndef COMPILER_BB_H
 #define COMPILER_BB_H
 
-#include "instruction.h"
+#include "pir.h"
 
 #include <cassert>
 #include <iostream>
@@ -18,10 +18,7 @@ class BB {
     void operator=(const BB&) = delete;
 
     BB(unsigned id);
-    ~BB() {
-        for (auto* i : instr)
-            delete i;
-    }
+    ~BB();
 
     unsigned indexOf(Instruction* i) {
         unsigned p = 0;
@@ -42,10 +39,7 @@ class BB {
     BB* next0 = nullptr;
     BB* next1 = nullptr;
 
-    void append(Instruction* i) {
-        instr.push_back(i);
-        i->bb_ = this;
-    }
+    void append(Instruction* i);
 
     void print(std::ostream& = std::cout);
 
