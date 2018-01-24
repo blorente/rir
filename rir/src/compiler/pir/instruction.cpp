@@ -29,6 +29,23 @@ void Instruction::printRef(std::ostream& out) { out << "%" << id(); };
 
 Instruction::Id Instruction::id() { return Id(bb()->id, bb()->indexOf(this)); }
 
+bool Instruction::unused() {
+    // TODO: better solution?
+    if (tag == ITag::Branch || tag == ITag::Return)
+        return false;
+
+    return Visitor::check(bb(), [&](BB* bb) {
+        bool unused = true;
+        for (auto i : bb->instr) {
+            i->each_arg(
+                [&](Value* v, PirType t) { unused = unused && (v != this); });
+            if (!unused)
+                return false;
+        }
+        return unused;
+    });
+}
+
 void Instruction::replaceUsesWith(Value* replace) {
     Visitor::run(bb(), [&](BB* bb) {
         for (auto i : bb->instr) {
@@ -96,6 +113,11 @@ void Call::printRhs(std::ostream& out) {
     }
     this->arg(nargs() - 1)->printRef(out);
     out << ") " << *env();
+}
+
+void Phi::updateType() {
+    type = arg(0)->type;
+    each_arg([&](Value* v, PirType t) -> void { type = type | t; });
 }
 }
 }

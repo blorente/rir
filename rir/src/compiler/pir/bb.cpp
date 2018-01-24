@@ -28,7 +28,13 @@ void BB::append(Instruction* i) {
     i->bb_ = this;
 }
 
+BB::Instrs::iterator BB::remove(Instrs::iterator it) {
+    delete *it;
+    return instr.erase(it);
+}
+
 void BB::replace(Instrs::iterator it, Instruction* i) {
+    delete *it;
     *it = i;
     i->bb_ = this;
 }

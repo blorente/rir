@@ -30,10 +30,7 @@ void InsertCast::apply(BB* bb) {
         auto instr = *i;
         Phi* p = nullptr;
         if ((p = Phi::cast(instr))) {
-            PirType out = instr->arg(0)->type;
-            instr->each_arg(
-                [&out](Value* v, PirType t) -> void { out = out | t; });
-            p->type = out;
+            p->updateType();
         }
         instr->map_arg([&i, bb](Value* v, PirType t) -> Value* {
             size_t added = 0;

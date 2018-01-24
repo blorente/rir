@@ -3,6 +3,7 @@
 #include "analysis/query.h"
 #include "analysis/verifier.h"
 #include "ir/BC.h"
+#include "opt/cleanup.h"
 #include "opt/scope_resolution.h"
 #include "pir/pir_impl.h"
 #include "transform/insert_cast.h"
@@ -290,6 +291,7 @@ Function* FunctionCompiler::operator()() {
     c(true);
 
     ScopeResolution::apply(f);
+    Cleanup::apply(f);
 
     Verifier v(f);
     v();
@@ -410,6 +412,7 @@ Value* CodeCompiler::operator()(bool addReturn) {
             std::get<0>(r)->next0 = merge;
             phi->push_arg(std::get<1>(r));
         }
+        phi->updateType();
         res = phi;
     }
 

@@ -87,6 +87,7 @@ class Instruction : public Value {
     const char* name() { return InstructionName(tag); }
 
     void replaceUsesWith(Value* val);
+    bool unused();
 
     virtual void printRhs(std::ostream& out = std::cout) {
         out << name() << " (";
@@ -430,6 +431,7 @@ class AsTest : public AnInstruction<ITag::AsTest, AsTest, 1, false, false> {
 class Phi : public VarArgInstruction<ITag::Phi, Phi, false, false> {
   public:
     Phi() : VarArgInstruction(PirType::any()) {}
+    void updateType();
 };
 }
 }

@@ -150,11 +150,14 @@ struct AbstractEnv {
 class ScopeAnalysis {
   public:
     std::vector<AbstractEnv> mergepoint;
+    AbstractEnv exitpoint;
     Function* function;
     ScopeAnalysis(Function* function) : function(function) {}
     std::vector<Argument> args;
+    typedef std::function<void(Instruction* i, AbstractEnv& env)>
+        collect_result;
 
-    void operator()() {
+    void operator()(collect_result collect) {
         CFG cfg(function->entry);
 
         mergepoint.resize(cfg.size());
@@ -172,12 +175,15 @@ class ScopeAnalysis {
             changed = false;
 
             Visitor::run(function->entry, [&](BB* bb) {
-                if (!bb->next0 && !bb->next1)
-                    return;
-
                 AbstractEnv env = mergepoint[bb->id];
                 for (auto i : bb->instr) {
+                    collect(i, env);
                     apply(env, i);
+                }
+
+                if (!bb->next0 && !bb->next1) {
+                    exitpoint.merge(env);
+                    return;
                 }
 
                 if (bb->next0)
@@ -186,11 +192,6 @@ class ScopeAnalysis {
                     changed = changed || mergepoint[bb->next1->id].merge(env);
             });
         } while (changed);
-
-        for (size_t i = 0; i < mergepoint.size(); ++i) {
-            std::cout << "@" << i << "\n";
-            mergepoint[i].print(std::cout);
-        }
     }
 
     static void apply(AbstractEnv& env, Instruction* i) {
@@ -215,53 +216,68 @@ class TheScopeResolution {
     Function* function;
     TheScopeResolution(Function* function) : function(function) {}
     void operator()() {
-        ScopeAnalysis a(function);
-        a();
-
         std::unordered_map<LdVar*, AbstractValue> loads;
 
-        Visitor::run(function->entry, [&](BB* bb) {
-            AbstractEnv env = a.mergepoint[bb->id];
-            for (auto i : bb->instr) {
-                LdVar* ld;
-                if ((ld = LdVar::Cast(i))) {
-                    loads[ld] = env.get(ld->varName);
-                }
-                ScopeAnalysis::apply(env, i);
+        ScopeAnalysis a(function);
+        a([&](Instruction* i, AbstractEnv& env) {
+            LdVar* ld;
+            if ((ld = LdVar::Cast(i))) {
+                loads[ld] = env.get(ld->varName);
             }
         });
+
+        bool needEnv = a.exitpoint.leaked;
+        if (!needEnv) {
+            for (auto i : loads) {
+                if (std::get<1>(i).kind() == AbstractValue::ValKind::Unknown) {
+                    needEnv = true;
+                    break;
+                }
+            }
+        }
 
         Visitor::run(function->entry, [&](BB* bb) {
             for (auto it = bb->instr.begin(); it != bb->instr.end(); it++) {
                 Instruction* i = *it;
                 LdVar* ld;
-                if ((ld = LdVar::Cast(i))) {
+                if (!needEnv && StVar::Cast(i)) {
+                    it = bb->remove(it);
+                } else if ((ld = LdVar::Cast(i))) {
                     auto v = loads[ld];
                     switch (v.kind()) {
                     case AbstractValue::ValKind::Value:
                         ld->replaceUsesWith(*v.val.begin());
+                        if (!needEnv)
+                            it = bb->remove(it);
                         break;
                     case AbstractValue::ValKind::Argument: {
                         Argument* a = static_cast<Argument*>(*v.val.begin());
                         auto lda = new LdArg(a->id, function->env);
-                        bb->replace(it, lda);
                         ld->replaceUsesWith(lda);
+                        bb->replace(it, lda);
                         break;
                     }
                     case AbstractValue::ValKind::Phi: {
-                        auto phi = new Phi();
-                        it++;
-                        it = bb->insert(it, phi);
+                        auto phi = new Phi;
                         for (auto a : v.val) {
                             phi->push_arg(a);
                         }
+                        phi->updateType();
                         ld->replaceUsesWith(phi);
+                        if (needEnv) {
+                            it++;
+                            it = bb->insert(it, phi);
+                        } else {
+                            bb->replace(it, phi);
+                        }
                         break;
                     }
                     case AbstractValue::ValKind::Unknown:
                         break;
                     }
                 };
+                if (it == bb->instr.end())
+                    return;
             }
         });
     }
