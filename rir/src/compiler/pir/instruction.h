@@ -298,7 +298,7 @@ class LdFun : public AnInstruction<ITag::LdFun, LdFun, 0, true, true,
     }
 };
 
-class LdVar : public AnInstruction<ITag::LdVar, LdVar, 0, true, false,
+class LdVar : public AnInstruction<ITag::LdVar, LdVar, 0, false, false,
                                    InstructionWithEnv<false>> {
   public:
     SEXP varName;
@@ -313,12 +313,13 @@ class LdVar : public AnInstruction<ITag::LdVar, LdVar, 0, true, false,
     void printRhs(std::ostream& out) override;
 };
 
-class LdArg : public AnInstruction<ITag::LdArg, LdArg, 0, true, false,
+class LdArg : public AnInstruction<ITag::LdArg, LdArg, 0, false, false,
                                    InstructionWithEnv<false>> {
   public:
     size_t id;
 
-    LdArg(size_t id, Env* env) : AnInstruction(PirType::any(), env), id(id) {}
+    LdArg(size_t id, Env* env)
+        : AnInstruction(PirType::valOrLazy(), env), id(id) {}
 
     void printRhs(std::ostream& out) override;
 };
@@ -327,7 +328,7 @@ class ChkMissing
     : public AnInstruction<ITag::ChkMissing, ChkMissing, 1, true, false> {
   public:
     ChkMissing(Value* in)
-        : AnInstruction(PirType::val(), {{PirType::valOrMissing()}}, {{in}}) {}
+        : AnInstruction(PirType::valOrLazy(), {{PirType::any()}}, {{in}}) {}
 };
 
 class ChkClosure
@@ -400,7 +401,7 @@ class Call : public VarArgInstruction<ITag::Call, Call, true, true,
                                       InstructionWithEnv<true>> {
   public:
     Call(Env* e, Value* fun, const std::vector<Value*>& args)
-        : VarArgInstruction(PirType::any(), e) {
+        : VarArgInstruction(PirType::valOrLazy(), e) {
         this->push_arg(RType::closure, fun);
         for (unsigned i = 1; i <= args.size(); ++i)
             this->push_arg(RType::prom, args[i - 1]);
@@ -412,7 +413,7 @@ class Call : public VarArgInstruction<ITag::Call, Call, true, true,
 class Force : public AnInstruction<ITag::Force, Force, 1, true, true> {
   public:
     Force(Value* in)
-        : AnInstruction(PirType::valOrMissing(), {{PirType::any()}}, {{in}}) {}
+        : AnInstruction(PirType::val(), {{PirType::any()}}, {{in}}) {}
 };
 
 class AsLogical

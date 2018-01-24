@@ -76,22 +76,10 @@ struct PirType {
                            RType::closure | RType::integer | RType::nil;
         return t;
     }
-    static PirType arg() {
-        static PirType t = val().orLazy();
-        return t;
-    }
-    static PirType valOrMissing() {
-        static PirType t = val().orMissing();
-        return t;
-    }
-    static PirType list() {
-        static PirType t = PirType(RType::cons) | RType::nil;
-        return t;
-    }
-    static PirType any() {
-        static PirType t = val().orLazy().orMissing();
-        return t;
-    }
+    static PirType valOrMissing() { return val().orMissing(); }
+    static PirType valOrLazy() { return val().orLazy(); }
+    static PirType list() { return PirType(RType::cons) | RType::nil; }
+    static PirType any() { return val().orLazy().orMissing(); }
 
     bool maybeMissing() { return missing_; }
 
