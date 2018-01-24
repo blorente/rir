@@ -12,23 +12,18 @@ namespace {
 using namespace rir::pir;
 
 struct AbstractValue {
-    enum class AKind : unsigned { Bottom, Values, Arguments, Unknown };
+    bool unknown = false;
 
     std::set<Value*> vals;
     std::set<size_t> args;
 
     PirType type = PirType::bottom();
 
-    AKind kind = AKind::Bottom;
-
     AbstractValue(PirType t = PirType::bottom()) : type(t) {}
-    AbstractValue(Value* v) : type(v->type), kind(AKind::Values) {
-        vals.insert(v);
-    }
+    AbstractValue(Value* v) : type(v->type) { vals.insert(v); }
 
     static AbstractValue arg(size_t id) {
         AbstractValue v(PirType::any());
-        v.kind = AKind::Arguments;
         v.args.insert(id);
         return v;
     }
@@ -42,86 +37,67 @@ struct AbstractValue {
     void taint() {
         vals.clear();
         args.clear();
-        kind = AKind::Unknown;
+        unknown = true;
         type = PirType::any();
     }
 
-    bool isUnknown() { return kind == AKind::Unknown; }
+    bool isUnknown() { return unknown; }
 
-    size_t candidates() {
-        assert(kind != AKind::Unknown && kind != AKind::Bottom);
-        if (kind == AKind::Values)
-            return vals.size();
-        if (kind == AKind::Arguments)
-            return args.size();
-        assert(false);
-        return 0;
+    bool singleValue() {
+        assert(!unknown);
+        return vals.size() == 1 && args.size() == 0;
+    }
+    bool singleArg() {
+        assert(!unknown);
+        return args.size() == 1 && vals.size() == 0;
     }
 
-    static constexpr unsigned cross(AKind a, AKind b) {
-        return ((unsigned)a << 4) + (unsigned)b;
-    }
+    bool merge(AbstractValue& other) {
+        assert(other.type != PirType::bottom());
 
-    bool merge(const AbstractValue& other) {
-        assert(other.kind != AKind::Bottom);
-
-        if (kind == AKind::Unknown)
+        if (unknown)
             return false;
-        if (kind == AKind::Bottom) {
+        if (type == PirType::bottom()) {
             *this = other;
             return true;
         }
-        if (other.kind == AKind::Unknown) {
+        if (other.unknown) {
             taint();
             return true;
         }
-        switch (cross(kind, other.kind)) {
-        case cross(AKind::Arguments, AKind::Values):
-        case cross(AKind::Values, AKind::Arguments):
-            taint();
-            return true;
-        case cross(AKind::Arguments, AKind::Arguments):
-            if (std::includes(args.begin(), args.end(), other.args.begin(),
-                              other.args.end()))
-                return false;
-            args.insert(other.args.begin(), other.args.end());
-            return true;
-        case cross(AKind::Values, AKind::Values):
-            if (std::includes(vals.begin(), vals.end(), other.vals.begin(),
-                              other.vals.end()))
-                return false;
+
+        bool changed = false;
+        if (!std::includes(vals.begin(), vals.end(), other.vals.begin(),
+                           other.vals.end())) {
             vals.insert(other.vals.begin(), other.vals.end());
-            return true;
-        default:
-            assert(false);
+            changed = true;
         }
-        assert(false);
-        return false;
+        if (!std::includes(args.begin(), args.end(), other.args.begin(),
+                           other.args.end())) {
+            args.insert(other.args.begin(), other.args.end());
+            changed = true;
+        }
+
+        return changed;
     }
 
     void print(std::ostream& out = std::cout) {
-        assert(kind != AKind::Bottom);
-        if (kind == AKind::Unknown) {
+        if (unknown) {
             out << "??";
             return;
         }
-        if (kind == AKind::Values) {
-            out << "val(";
-            for (auto it = vals.begin(); it != vals.end();) {
-                (*it)->printRef(out);
-                it++;
-                if (it != vals.end())
-                    out << "|";
-            }
-        } else {
-            assert(kind == AKind::Arguments);
-            out << "arg(";
-            for (auto it = args.begin(); it != args.end();) {
-                std::cout << *it;
-                it++;
-                if (it != args.end())
-                    out << ",";
-            }
+        out << "(";
+        for (auto it = vals.begin(); it != vals.end();) {
+            (*it)->printRef(out);
+            it++;
+            if (it != vals.end() && args.size() != 0)
+                out << "|";
+        }
+        for (auto it = args.begin(); it != args.end();) {
+            out << *it;
+            it++;
+            if (it != args.end())
+                out << "|";
         }
         out << ") : " << type;
     }
@@ -154,7 +130,7 @@ struct AbstractEnv {
         out << "\n";
     }
 
-    const AbstractValue& get(SEXP e) {
+    AbstractValue& get(SEXP e) {
         static AbstractValue t = AbstractValue::tainted();
         if (entries.count(e))
             return entries.at(e);
@@ -281,14 +257,18 @@ class TheScopeResolution {
                     it = bb->remove(it);
                 } else if ((ld = LdVar::Cast(i))) {
                     auto v = loads[ld];
-                    switch (v.kind) {
-                    case AbstractValue::AKind::Values: {
-                        if (v.candidates() == 1) {
-                            ld->replaceUsesWith(*v.vals.begin());
-                            if (!needEnv)
-                                it = bb->remove(it);
-                            break;
-                        }
+                    if (v.isUnknown()) {
+                    } else if (v.singleValue()) {
+                        ld->replaceUsesWith(*v.vals.begin());
+                        if (!needEnv)
+                            it = bb->remove(it);
+                    } else if (v.singleArg()) {
+                        auto lda = new LdArg(*v.args.begin());
+                        ld->replaceUsesWith(lda);
+                        bb->replace(it, lda);
+                    } else if (v.args.empty()) {
+                        // TODO: mixing args and vals, but placing the LdArgs is
+                        // hard...
                         auto phi = new Phi;
                         for (auto a : v.vals) {
                             phi->push_arg(a);
@@ -301,22 +281,6 @@ class TheScopeResolution {
                         } else {
                             bb->replace(it, phi);
                         }
-                        break;
-                    }
-                    case AbstractValue::AKind::Arguments: {
-                        if (v.candidates() == 1) {
-                            size_t arg = *v.args.begin();
-                            auto lda = new LdArg(arg, function->env);
-                            ld->replaceUsesWith(lda);
-                            bb->replace(it, lda);
-                            break;
-                        }
-                        // TODO
-                        break;
-                    }
-                    case AbstractValue::AKind::Bottom:
-                        assert(false);
-                    case AbstractValue::AKind::Unknown:
                         break;
                     }
                 };

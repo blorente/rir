@@ -94,7 +94,6 @@ void LdVar::printRhs(std::ostream& out) {
 
 void LdArg::printRhs(std::ostream& out) {
     out << name() << "(" << id << ")";
-    out << " " << *env();
 }
 
 void StVar::printRhs(std::ostream& out) {

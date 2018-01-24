@@ -313,13 +313,11 @@ class LdVar : public AnInstruction<ITag::LdVar, LdVar, 0, false, false,
     void printRhs(std::ostream& out) override;
 };
 
-class LdArg : public AnInstruction<ITag::LdArg, LdArg, 0, false, false,
-                                   InstructionWithEnv<false>> {
+class LdArg : public AnInstruction<ITag::LdArg, LdArg, 0, false, false> {
   public:
     size_t id;
 
-    LdArg(size_t id, Env* env)
-        : AnInstruction(PirType::valOrLazy(), env), id(id) {}
+    LdArg(size_t id) : AnInstruction(PirType::valOrLazy()), id(id) {}
 
     void printRhs(std::ostream& out) override;
 };

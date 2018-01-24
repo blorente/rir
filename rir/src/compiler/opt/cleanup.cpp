@@ -41,6 +41,8 @@ class TheCleanup {
                         it = bb->remove(it);
                     }
                 }
+                if (it == bb->instr.end())
+                    break;
             }
         });
     }

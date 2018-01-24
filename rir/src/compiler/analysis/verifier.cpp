@@ -36,9 +36,10 @@ bool Verifier::verify(BB* bb) {
             return false;
         }
     if (bb->instr.empty()) {
-        if (bb->next0 || bb->next1)
+        if (!bb->next0 && !bb->next1) {
             assert(false);
             return false;
+        }
     } else {
         Instruction* last = bb->last();
         if ((Branch::Cast(last))) {
