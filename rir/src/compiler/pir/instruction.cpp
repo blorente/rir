@@ -1,6 +1,7 @@
 #include "instruction.h"
 #include "pir_impl.h"
 
+#include "../util/visitor.h"
 #include "utils/capture_out.h"
 
 #include <cassert>
@@ -28,6 +29,19 @@ void Instruction::printRef(std::ostream& out) { out << "%" << id(); };
 
 Instruction::Id Instruction::id() { return Id(bb()->id, bb()->indexOf(this)); }
 
+void Instruction::replaceUsesWith(Value* replace) {
+    Visitor::run(bb(), [&](BB* bb) {
+        for (auto i : bb->instr) {
+            i->map_arg([&](Value* v, PirType t) {
+                if (v == this)
+                    return replace;
+                else
+                    return v;
+            });
+        }
+    });
+}
+
 void LdConst::printRhs(std::ostream& out) {
     std::string val;
     {
@@ -41,7 +55,7 @@ void LdConst::printRhs(std::ostream& out) {
 }
 
 void Branch::printRhs(std::ostream& out) {
-    out << name();
+    out << name() << " ";
     arg<0>()->printRef(out);
     out << ", BB" << bb()->next0->id << ", BB" << bb()->next1->id;
 }
@@ -58,6 +72,11 @@ void MkClsFun::printRhs(std::ostream& out) {
 
 void LdVar::printRhs(std::ostream& out) {
     out << name() << "(" << CHAR(PRINTNAME(varName)) << ")";
+    out << " " << *env();
+}
+
+void LdArg::printRhs(std::ostream& out) {
+    out << name() << "(" << id << ")";
     out << " " << *env();
 }
 

@@ -17,6 +17,7 @@
     V(LdFun)                                                                   \
     V(LdVar)                                                                   \
     V(LdConst)                                                                 \
+    V(LdArg)                                                                   \
     V(StVar)                                                                   \
     V(Branch)                                                                  \
     V(Phi)                                                                     \
@@ -62,7 +63,9 @@ class Instruction : public Value {
     virtual const PirType* types() = 0;
 
   public:
-    virtual bool pure() = 0;
+    virtual bool mightIO() = 0;
+    virtual bool changesEnv() = 0;
+    virtual bool leaksEnv() { return false; }
 
     typedef std::pair<unsigned, unsigned> Id;
     const ITag tag;
@@ -82,6 +85,8 @@ class Instruction : public Value {
     typedef std::function<Value*(Value*, PirType)> arg_map_iterator;
 
     const char* name() { return InstructionName(tag); }
+
+    void replaceUsesWith(Value* val);
 
     virtual void printRhs(std::ostream& out = std::cout) {
         out << name() << " (";
@@ -126,16 +131,18 @@ class Instruction : public Value {
     }
 };
 
+template <bool LEAKS_ENV>
 class InstructionWithEnv : public Instruction {
     Env* env_;
 
   public:
+    bool leaksEnv() override { return LEAKS_ENV; }
     Env* env() { return env_; }
     InstructionWithEnv(ITag tag, PirType t, Env* env)
         : Instruction(tag, t), env_(env) {}
 };
 
-template <ITag class_tag, class Base, size_t ARGS, bool PURE,
+template <ITag class_tag, class Base, size_t ARGS, bool IO, bool MOD_ENV,
           class Super = Instruction>
 class AnInstruction : public Super {
     std::array<Value*, ARGS> arg_;
@@ -146,7 +153,8 @@ class AnInstruction : public Super {
     const PirType* types() override { return &arg_type[0]; }
 
   public:
-    bool pure() override { return PURE; }
+    bool mightIO() override { return IO; }
+    bool changesEnv() override { return MOD_ENV; }
 
     AnInstruction(AnInstruction&) = delete;
     void operator=(AnInstruction&) = delete;
@@ -191,20 +199,33 @@ class AnInstruction : public Super {
         static_assert(ARGS == 0, "Missing arguments");
     }
 
-    static Base* cast(Value* v) {
+    static Base* Cast(Value* v) {
         if (v->kind == Kind::instruction)
-            return cast(static_cast<Instruction*>(v));
+            return Cast(static_cast<Instruction*>(v));
         return nullptr;
     }
 
-    static Base* cast(Instruction* i) {
+    static Base* Cast(Instruction* i) {
         if (i->tag == class_tag)
             return static_cast<Base*>(i);
         return nullptr;
     }
+
+    static void If(Instruction* i, std::function<void()> maybe) {
+        Base* b = Cast(i);
+        if (b)
+            maybe();
+    }
+
+    static void If(Instruction* i, std::function<void(Base* b)> maybe) {
+        Base* b = Cast(i);
+        if (b)
+            maybe(b);
+    }
 };
 
-template <ITag class_tag, class Base, bool PURE, class Super = Instruction>
+template <ITag class_tag, class Base, bool IO, bool MOD_ENV,
+          class Super = Instruction>
 class VarArgInstruction : public Super {
     std::vector<Value*> arg_;
     std::vector<PirType> arg_type;
@@ -215,7 +236,8 @@ class VarArgInstruction : public Super {
     const PirType* types() override { return arg_type.data(); }
 
   public:
-    bool pure() override { return PURE; }
+    bool mightIO() override { return IO; }
+    bool changesEnv() override { return MOD_ENV; }
 
     VarArgInstruction(VarArgInstruction&) = delete;
     void operator=(VarArgInstruction&) = delete;
@@ -254,7 +276,7 @@ class VarArgInstruction : public Super {
 
 extern std::ostream& operator<<(std::ostream& out, Instruction::Id id);
 
-class LdConst : public AnInstruction<ITag::LdConst, LdConst, 0, true> {
+class LdConst : public AnInstruction<ITag::LdConst, LdConst, 0, false, false> {
   public:
     LdConst(SEXP c, PirType t) : AnInstruction(t), c(c) {}
     LdConst(SEXP c) : AnInstruction(PirType::val()), c(c) {}
@@ -262,8 +284,8 @@ class LdConst : public AnInstruction<ITag::LdConst, LdConst, 0, true> {
     void printRhs(std::ostream& out) override;
 };
 
-class LdFun
-    : public AnInstruction<ITag::LdFun, LdFun, 0, false, InstructionWithEnv> {
+class LdFun : public AnInstruction<ITag::LdFun, LdFun, 0, true, true,
+                                   InstructionWithEnv<false>> {
   public:
     SEXP varName;
 
@@ -275,8 +297,8 @@ class LdFun
     }
 };
 
-class LdVar
-    : public AnInstruction<ITag::LdVar, LdVar, 0, true, InstructionWithEnv> {
+class LdVar : public AnInstruction<ITag::LdVar, LdVar, 0, true, false,
+                                   InstructionWithEnv<false>> {
   public:
     SEXP varName;
 
@@ -290,22 +312,32 @@ class LdVar
     void printRhs(std::ostream& out) override;
 };
 
+class LdArg : public AnInstruction<ITag::LdArg, LdArg, 0, true, false,
+                                   InstructionWithEnv<false>> {
+  public:
+    size_t id;
+
+    LdArg(size_t id, Env* env) : AnInstruction(PirType::any(), env), id(id) {}
+
+    void printRhs(std::ostream& out) override;
+};
+
 class ChkMissing
-    : public AnInstruction<ITag::ChkMissing, ChkMissing, 1, false> {
+    : public AnInstruction<ITag::ChkMissing, ChkMissing, 1, true, false> {
   public:
     ChkMissing(Value* in)
         : AnInstruction(PirType::val(), {{PirType::valOrMissing()}}, {{in}}) {}
 };
 
 class ChkClosure
-    : public AnInstruction<ITag::ChkClosure, ChkClosure, 1, false> {
+    : public AnInstruction<ITag::ChkClosure, ChkClosure, 1, true, false> {
   public:
     ChkClosure(Value* in)
         : AnInstruction(RType::closure, {{PirType::val()}}, {{in}}) {}
 };
 
-class StVar
-    : public AnInstruction<ITag::StVar, StVar, 1, false, InstructionWithEnv> {
+class StVar : public AnInstruction<ITag::StVar, StVar, 1, true, true,
+                                   InstructionWithEnv<false>> {
   public:
     StVar(SEXP name, Value* val, Env* env)
         : AnInstruction(PirType::voyd(), {{PirType::val()}}, {{val}}, env),
@@ -321,22 +353,22 @@ class StVar
     void printRhs(std::ostream& out) override;
 };
 
-class Branch : public AnInstruction<ITag::Branch, Branch, 1, true> {
+class Branch : public AnInstruction<ITag::Branch, Branch, 1, false, false> {
   public:
     Branch(Value* test)
         : AnInstruction(PirType::voyd(), {{NativeType::test}}, {{test}}) {}
     void printRhs(std::ostream& out) override;
 };
 
-class Return : public AnInstruction<ITag::Return, Return, 1, true> {
+class Return : public AnInstruction<ITag::Return, Return, 1, false, false> {
   public:
     Return(Value* ret)
         : AnInstruction(PirType::voyd(), {{PirType::val()}}, {{ret}}) {}
 };
 
 class Promise;
-class MkArg
-    : public AnInstruction<ITag::MkArg, MkArg, 1, true, InstructionWithEnv> {
+class MkArg : public AnInstruction<ITag::MkArg, MkArg, 1, false, false,
+                                   InstructionWithEnv<false>> {
   public:
     Promise* prom;
     MkArg(Promise* prom, Value* v, Env* env)
@@ -345,8 +377,8 @@ class MkArg
     void printRhs(std::ostream& out) override;
 };
 
-class MkCls
-    : public AnInstruction<ITag::MkCls, MkCls, 3, true, InstructionWithEnv> {
+class MkCls : public AnInstruction<ITag::MkCls, MkCls, 3, false, false,
+                                   InstructionWithEnv<false>> {
   public:
     MkCls(Value* code, Value* arg, Value* src, Env* parent)
         : AnInstruction(RType::closure,
@@ -354,8 +386,8 @@ class MkCls
                         {{code, arg, src}}, parent) {}
 };
 
-class MkClsFun : public AnInstruction<ITag::MkClsFun, MkClsFun, 0, true,
-                                      InstructionWithEnv> {
+class MkClsFun : public AnInstruction<ITag::MkClsFun, MkClsFun, 0, false, false,
+                                      InstructionWithEnv<false>> {
   public:
     Function* fun;
     MkClsFun(Function* fun, Env* env)
@@ -363,8 +395,8 @@ class MkClsFun : public AnInstruction<ITag::MkClsFun, MkClsFun, 0, true,
     void printRhs(std::ostream& out) override;
 };
 
-class Call
-    : public VarArgInstruction<ITag::Call, Call, false, InstructionWithEnv> {
+class Call : public VarArgInstruction<ITag::Call, Call, true, true,
+                                      InstructionWithEnv<true>> {
   public:
     Call(Env* e, Value* fun, const std::vector<Value*>& args)
         : VarArgInstruction(PirType::any(), e) {
@@ -376,25 +408,26 @@ class Call
     void printRhs(std::ostream& out) override;
 };
 
-class Force : public AnInstruction<ITag::Force, Force, 1, false> {
+class Force : public AnInstruction<ITag::Force, Force, 1, true, true> {
   public:
     Force(Value* in)
         : AnInstruction(PirType::valOrMissing(), {{PirType::any()}}, {{in}}) {}
 };
 
-class AsLogical : public AnInstruction<ITag::AsLogical, AsLogical, 1, false> {
+class AsLogical
+    : public AnInstruction<ITag::AsLogical, AsLogical, 1, true, false> {
   public:
     AsLogical(Value* in)
         : AnInstruction(RType::logical, {{PirType::val()}}, {{in}}) {}
 };
 
-class AsTest : public AnInstruction<ITag::AsTest, AsTest, 1, true> {
+class AsTest : public AnInstruction<ITag::AsTest, AsTest, 1, false, false> {
   public:
     AsTest(Value* in)
         : AnInstruction(NativeType::test, {{RType::logical}}, {{in}}) {}
 };
 
-class Phi : public VarArgInstruction<ITag::Phi, Phi, true> {
+class Phi : public VarArgInstruction<ITag::Phi, Phi, false, false> {
   public:
     Phi() : VarArgInstruction(PirType::any()) {}
 };

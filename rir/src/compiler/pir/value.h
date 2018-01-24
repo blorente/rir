@@ -9,7 +9,7 @@
 namespace rir {
 namespace pir {
 
-enum class Kind : uint8_t { value, instruction };
+enum class Kind : uint8_t { value, argument, instruction };
 
 class BB;
 

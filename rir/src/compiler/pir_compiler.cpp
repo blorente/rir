@@ -3,6 +3,7 @@
 #include "analysis/query.h"
 #include "analysis/verifier.h"
 #include "ir/BC.h"
+#include "opt/scope_resolution.h"
 #include "pir/pir_impl.h"
 #include "transform/insert_cast.h"
 #include "util/builder.h"
@@ -131,6 +132,9 @@ class CodeCompiler {
             // TODO
             break;
         case Opcode::isfun_:
+            break;
+        case Opcode::pop_:
+            pop();
             break;
         case Opcode::call_: {
             unsigned n = bc.immediate.call_args.nargs;
@@ -265,11 +269,12 @@ class TheCompiler {
         assert(isValidClosureSEXP(in));
         DispatchTable* tbl = DispatchTable::unpack(BODY(in));
         rir::Function* fun = tbl->first();
-        SEXP formals = FORMALS(in);
+        auto formals = RList(FORMALS(in));
 
         std::vector<SEXP> fml;
-        for (auto f : RList(formals))
-            fml.push_back(f);
+        for (auto it = formals.begin(); it != formals.end(); ++it) {
+            fml.push_back(it.tag());
+        }
 
         Env* e = createEnv(nullptr);
         FunctionCompiler f(fun, e, fml, this);
@@ -283,6 +288,9 @@ Function* FunctionCompiler::operator()() {
     Builder b(f, f, f->env, f->entry);
     CodeCompiler c(b, src, src->body(), cmp);
     c(true);
+
+    ScopeResolution::apply(f);
+
     Verifier v(f);
     v();
     return f;
@@ -360,13 +368,14 @@ Value* CodeCompiler::operator()(bool addReturn) {
             /* BC ldsrc = */ BC::advance(&m.pc);
             BC::advance(&m.pc); // close
 
-            SEXP fmlsl = ldfmls.immediateConst();
+            auto fmlsl = RList(ldfmls.immediateConst());
             SEXP code = ldcode.immediateConst();
             // SEXP src = ldsrc.immediateConst();
 
             std::vector<SEXP> fmls;
-            for (auto f : RList(fmlsl))
-                fmls.push_back(f);
+            for (auto it = fmlsl.begin(); it != fmlsl.end(); ++it) {
+                fmls.push_back(it.tag());
+            }
 
             DispatchTable* dt = DispatchTable::unpack(code);
             rir::Function* fun = dt->first();

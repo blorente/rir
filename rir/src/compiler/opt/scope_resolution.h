@@ -6,6 +6,7 @@ namespace pir {
 
 class Function;
 class ScopeResolution {
+  public:
     static void apply(Function* function);
 };
 }

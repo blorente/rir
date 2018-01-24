@@ -27,5 +27,16 @@ void BB::append(Instruction* i) {
     instr.push_back(i);
     i->bb_ = this;
 }
+
+void BB::replace(Instrs::iterator it, Instruction* i) {
+    *it = i;
+    i->bb_ = this;
+}
+
+BB::Instrs::iterator BB::insert(Instrs::iterator it, Instruction* i) {
+    auto itup = instr.insert(it, i);
+    i->bb_ = this;
+    return itup;
+}
 }
 }

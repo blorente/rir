@@ -8,7 +8,7 @@ namespace pir {
 bool Query::pure(Code* c) {
     return Visitor::check(c->entry, [](BB* bb) {
         for (auto i : bb->instr)
-            if (!i->pure())
+            if (i->mightIO() || i->changesEnv())
                 return false;
         return true;
     });

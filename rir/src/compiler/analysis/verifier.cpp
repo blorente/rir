@@ -32,23 +32,30 @@ void Verifier::operator()() {
 bool Verifier::verify(BB* bb) {
     for (auto i : bb->instr)
         if (!verify(i, bb)) {
+            assert(false);
             return false;
         }
     if (bb->instr.empty()) {
         if (bb->next0 || bb->next1)
+            assert(false);
             return false;
     } else {
         Instruction* last = bb->last();
-        if ((Branch::cast(last))) {
-            if (!bb->next0 || bb->next1)
+        if ((Branch::Cast(last))) {
+            if (!bb->next0 || !bb->next1) {
+                assert(false);
                 return false;
-        } else if ((Return::cast(last))) {
-            if (bb->next0 || bb->next1)
+            }
+        } else if ((Return::Cast(last))) {
+            if (bb->next0 || bb->next1) {
+                assert(false);
                 return false;
+            }
         } else {
-            // TODO: check if conditional branch
-            if (!bb->next0 || !bb->next1)
+            if (!bb->next0 || bb->next1) {
+                assert(false);
                 return false;
+            }
         }
     }
     return true;
@@ -72,14 +79,14 @@ bool Verifier::verify(Instruction* i, BB* bb) {
         }
         if (!Phi::cast(i)) {
             v->bb([&](BB* valueBB) {
-                if (valueBB != bb) {
-                    std::cerr << "Error at instruction '";
-                    i->print(std::cerr);
-                    std::cerr << "': Value ";
-                    v->printRef(std::cerr);
-                    std::cerr << " does not come from the same BB\n";
-                    success = false;
-                }
+                // if (valueBB != bb) {
+                //     std::cerr << "Error at instruction '";
+                //     i->print(std::cerr);
+                //     std::cerr << "': Value ";
+                //     v->printRef(std::cerr);
+                //     std::cerr << " does not come from the same BB\n";
+                //     success = false;
+                // }
             });
         }
     });

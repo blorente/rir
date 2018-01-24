@@ -39,11 +39,15 @@ class BB {
     BB* next0 = nullptr;
     BB* next1 = nullptr;
 
+    typedef std::vector<Instruction*> Instrs;
+
     void append(Instruction* i);
+    Instrs::iterator insert(Instrs::iterator it, Instruction* i);
+    void replace(Instrs::iterator it, Instruction* i);
 
     void print(std::ostream& = std::cout);
 
-    std::vector<Instruction*> instr;
+    Instrs instr;
 };
 
 }

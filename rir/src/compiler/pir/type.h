@@ -116,15 +116,11 @@ struct PirType {
         return PirType(t_.r);
     }
 
-    static PirType voyd() {
-        static PirType t = NativeTypeSet();
-        return t;
-    }
+    static PirType voyd() { return NativeTypeSet(); }
 
-    static PirType missing() {
-        static PirType t = PirType(RTypeSet()).orMissing();
-        return t;
-    }
+    static PirType missing() { return bottom().orMissing(); }
+
+    static PirType bottom() { return PirType(RTypeSet()); }
 
     PirType operator|(PirType o) {
         if (!rtype_ && !o.rtype_) {
