@@ -14,47 +14,41 @@ class TheCleanup {
     TheCleanup(Function* function) : function(function) {}
     Function* function;
     void operator()() {
-        Visitor::run(function->entry, [&](BB* bb) {
-            for (auto it = bb->instr.begin(); it != bb->instr.end(); it++) {
-                Instruction* i = *it;
-                Force* force = Force::Cast(i);
-                ChkMissing* missing = ChkMissing::Cast(i);
-                ChkClosure* closure = ChkClosure::Cast(i);
-                if (!i->mightIO() && !i->changesEnv() && i->unused()) {
-                    it = bb->remove(it);
-                } else if (force) {
-                    Value* arg = force->arg<0>();
-                    if (PirType::valOrMissing() >= arg->type) {
-                        force->replaceUsesWith(arg);
+        for (int i = 0; i < 2; ++i)
+            Visitor::run(function->entry, [&](BB* bb) {
+                for (auto it = bb->instr.begin(); it != bb->instr.end(); it++) {
+                    Instruction* i = *it;
+                    Force* force = Force::Cast(i);
+                    ChkMissing* missing = ChkMissing::Cast(i);
+                    ChkClosure* closure = ChkClosure::Cast(i);
+                    Phi* phi = Phi::Cast(i);
+                    if (!i->mightIO() && !i->changesEnv() && i->unused()) {
                         it = bb->remove(it);
+                    } else if (force) {
+                        Value* arg = force->arg<0>();
+                        if (PirType::valOrMissing() >= arg->type) {
+                            force->replaceUsesWith(arg);
+                            it = bb->remove(it);
+                        }
+                    } else if (missing) {
+                        Value* arg = missing->arg<0>();
+                        if (PirType::val() >= arg->type) {
+                            missing->replaceUsesWith(arg);
+                            it = bb->remove(it);
+                        }
+                    } else if (closure) {
+                        Value* arg = closure->arg<0>();
+                        if (PirType::val() >= arg->type) {
+                            closure->replaceUsesWith(arg);
+                            it = bb->remove(it);
+                        }
+                    } else if (phi) {
+                        phi->updateType();
                     }
-                } else if (missing) {
-                    Value* arg = missing->arg<0>();
-                    if (PirType::val() >= arg->type) {
-                        missing->replaceUsesWith(arg);
-                        it = bb->remove(it);
-                    }
-                } else if (closure) {
-                    Value* arg = closure->arg<0>();
-                    if (PirType::val() >= arg->type) {
-                        closure->replaceUsesWith(arg);
-                        it = bb->remove(it);
-                    }
+                    if (it == bb->instr.end())
+                        break;
                 }
-                if (it == bb->instr.end())
-                    break;
-            }
-        });
-
-        Visitor::run(function->entry, [&](BB* bb) {
-            for (auto it = bb->instr.begin(); it != bb->instr.end(); it++) {
-                Instruction* i = *it;
-                Phi* phi = Phi::Cast(i);
-                if (phi) {
-                    phi->updateType();
-                }
-            }
-        });
+            });
     }
 };
 }

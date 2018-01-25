@@ -116,7 +116,7 @@ void Call::printRhs(std::ostream& out) {
 
 void Phi::updateType() {
     type = arg(0)->type;
-    each_arg([&](Value* v, PirType t) -> void { type = type | t; });
+    each_arg([&](Value* v, PirType t) -> void { type = type | v->type; });
 }
 }
 }
