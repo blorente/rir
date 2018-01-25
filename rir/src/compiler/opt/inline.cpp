@@ -1,7 +1,7 @@
 #include "inline.h"
 #include "../analysis/query.h"
 #include "../pir/pir_impl.h"
-#include "../util/bb_clone.h"
+#include "../transform/bb.h"
 #include "../util/cfg.h"
 #include "../util/visitor.h"
 #include "R/r.h"
@@ -31,17 +31,12 @@ class TheInliner {
                 Function* fun = cls->fun;
                 if (!Query::noEnv(fun))
                     continue;
+                if (fun->arg_name.size() != call->nargs() - 1)
+                    continue;
 
-                BB* split = new BB(++function->max_bb_id);
-                split->next0 = bb->next0;
-                split->next1 = bb->next1;
+                BB* split = BBTransform::split(++function->max_bb_id, bb, it);
 
-                it = bb->moveTo(it, split);
-                it++;
                 Call* newCall = Call::Cast(*split->instr.begin());
-                for (; it != bb->instr.end(); ++it) {
-                    it = bb->moveTo(it, split);
-                }
                 std::vector<MkArg*> arguments;
                 for (size_t i = 0; i < newCall->nargs() - 1; ++i) {
                     MkArg* a = MkArg::Cast(newCall->callArg(i));
@@ -49,15 +44,9 @@ class TheInliner {
                     arguments.push_back(a);
                 }
 
-                BB* copy = BBClone::run(fun);
-                Visitor::run(
-                    copy, [&](BB* bb) { bb->id += function->max_bb_id + 1; });
-                function->max_bb_id += fun->max_bb_id + 1;
-
+                BB* copy = BBTransform::clone(&function->max_bb_id, fun->entry);
                 bb->next0 = copy;
-                bb->next1 = nullptr;
 
-                bool found_ret = false;
                 Visitor::run(copy, [&](BB* bb) {
                     for (auto it = bb->instr.begin(); it != bb->instr.end();
                          it++) {
@@ -66,29 +55,35 @@ class TheInliner {
                             continue;
                         MkArg* a = arguments[ld->id];
                         Value* strict = a->arg<0>();
-                        // Todo: actually lazy args need another BB splicing foo
-                        // here!!
-                        assert(strict != Missing::instance());
-                        ld->replaceUsesWith(strict);
-                        it = bb->remove(it);
-                    }
-
-                    if (bb->next0 == nullptr) {
-                        assert(bb->next1 == nullptr);
-                        assert(!found_ret);
-                        bb->next0 = split;
-                        Return* ret = Return::Cast(bb->instr.back());
-                        if (!ret)
-                            asm("int3");
-                        newCall->replaceUsesWith(ret->arg<0>());
-                        bb->remove(bb->instr.end() - 1);
-                        found_ret = true;
+                        if (strict != Missing::instance()) {
+                            ld->replaceUsesWith(strict);
+                            it = bb->remove(it);
+                        } else {
+                            Promise* prom = a->prom;
+                            BB* split = BBTransform::split(
+                                ++function->max_bb_id, bb, it);
+                            BB* prom_copy = BBTransform::clone(
+                                &function->max_bb_id, prom->entry);
+                            bb->next0 = prom_copy;
+                            Value* promRes =
+                                BBTransform::forInline(prom_copy, split);
+                            it = split->instr.begin();
+                            ld = LdArg::Cast(*it);
+                            assert(ld);
+                            ld->replaceUsesWith(promRes);
+                            it = split->remove(it);
+                            bb = split;
+                        }
+                        if (it == bb->instr.end())
+                            return;
                     }
                 });
-                assert(found_ret);
 
+                Value* inlineeRes = BBTransform::forInline(copy, split);
+                newCall->replaceUsesWith(inlineeRes);
                 // Remove the call instruction
                 split->remove(split->instr.begin());
+
                 bb = split;
                 it = split->instr.begin();
             }

@@ -40,10 +40,7 @@ BB::Instrs::iterator BB::moveTo(Instrs::iterator it, BB* other) {
     Instruction* i = *it;
     i->bb_ = other;
     other->instr.push_back(i);
-    auto itup = instr.erase(it);
-    if (itup != instr.begin())
-        itup--;
-    return itup;
+    return instr.erase(it);
 }
 
 BB* BB::cloneInstrs(BB* src) {

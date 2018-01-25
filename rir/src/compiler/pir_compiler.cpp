@@ -445,8 +445,7 @@ void PirCompiler::compileFunction(SEXP f) {
         Cleanup::apply(f);
     }
 
-    cmp.m->print(std::cout);
-    std::cout << "------\n";
+    cmp.m->function.front()->print(std::cout);
 
     delete cmp.m;
 }
