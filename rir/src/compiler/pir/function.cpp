@@ -10,7 +10,8 @@ void Function::print(std::ostream& out) {
     out << "Function " << this << "(" << *env << ")\n";
     Code::print(out);
     for (auto p : promise) {
-        p->print(out);
+        if (p)
+            p->print(out);
     }
 }
 
@@ -22,7 +23,8 @@ Promise* Function::createProm() {
 
 Function::~Function() {
     for (auto p : promise)
-        delete p;
+        if (p)
+            delete p;
     for (auto p : default_arg)
         delete p;
 }

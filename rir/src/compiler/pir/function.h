@@ -29,6 +29,8 @@ class Function : public Code {
 
     Promise* createProm();
 
+    size_t max_bb_id = 0;
+
     friend std::ostream& operator<<(std::ostream& out, const Function& e) {
         out << "Func(" << (void*)&e << ")";
         return out;

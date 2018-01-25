@@ -167,9 +167,7 @@ class ScopeAnalysis {
         collect_result;
 
     void operator()(collect_result collect) {
-        CFG cfg(function->entry);
-
-        mergepoint.resize(cfg.size());
+        mergepoint.resize(function->max_bb_id + 1);
         bool changed;
 
         // Insert arguments into environment

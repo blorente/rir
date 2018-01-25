@@ -4,6 +4,7 @@
 #include "analysis/verifier.h"
 #include "ir/BC.h"
 #include "opt/cleanup.h"
+#include "opt/inline.h"
 #include "opt/scope_resolution.h"
 #include "pir/pir_impl.h"
 #include "transform/insert_cast.h"
@@ -434,6 +435,19 @@ void PirCompiler::compileFunction(SEXP f) {
     cmp(f);
 
     cmp.m->print(std::cout);
+    std::cout << "------\n";
+
+    for (auto f : cmp.m->function) {
+        Inline::apply(f);
+        ScopeResolution::apply(f);
+        Cleanup::apply(f);
+        ScopeResolution::apply(f);
+        Cleanup::apply(f);
+    }
+
+    cmp.m->print(std::cout);
+    std::cout << "------\n";
+
     delete cmp.m;
 }
 }

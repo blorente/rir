@@ -12,13 +12,15 @@ namespace pir {
 
 class BB {
   public:
-    const unsigned id;
+    unsigned id;
 
     BB(const BB&) = delete;
     void operator=(const BB&) = delete;
 
     BB(unsigned id);
     ~BB();
+
+    static BB* cloneInstrs(BB* src);
 
     unsigned indexOf(Instruction* i) {
         unsigned p = 0;
@@ -46,7 +48,8 @@ class BB {
     Instrs::iterator insert(Instrs::iterator it, Instruction* i);
     void replace(Instrs::iterator it, Instruction* i);
 
-    BB::Instrs::iterator remove(Instrs::iterator it);
+    Instrs::iterator remove(Instrs::iterator it);
+    Instrs::iterator moveTo(Instrs::iterator it, BB* other);
 
     void print(std::ostream& = std::cout);
 

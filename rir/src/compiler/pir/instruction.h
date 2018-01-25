@@ -58,14 +58,18 @@ static const char* InstructionName(ITag tag) {
 
 class Instruction : public Value {
   protected:
-    virtual size_t nargs() = 0;
     virtual Value** args() = 0;
     virtual const PirType* types() = 0;
 
   public:
+    virtual size_t nargs() = 0;
+
     virtual bool mightIO() = 0;
     virtual bool changesEnv() = 0;
     virtual bool leaksEnv() { return false; }
+    virtual bool needsEnv() { return false; }
+
+    virtual Instruction* clone() = 0;
 
     typedef std::pair<unsigned, unsigned> Id;
     const ITag tag;
@@ -137,6 +141,7 @@ class InstructionWithEnv : public Instruction {
     Env* env_;
 
   public:
+    bool needsEnv() override { return true; }
     bool leaksEnv() override { return LEAKS_ENV; }
     Env* env() { return env_; }
     InstructionWithEnv(ITag tag, PirType t, Env* env)
@@ -149,15 +154,19 @@ class AnInstruction : public Super {
     std::array<Value*, ARGS> arg_;
 
   protected:
-    size_t nargs() override { return ARGS; }
     Value** args() override { return &arg_[0]; }
     const PirType* types() override { return &arg_type[0]; }
 
   public:
+    size_t nargs() override { return ARGS; }
     bool mightIO() override { return IO; }
     bool changesEnv() override { return MOD_ENV; }
 
-    AnInstruction(AnInstruction&) = delete;
+    Instruction* clone() override {
+        assert(Base::Cast(this));
+        return new Base(*static_cast<Base*>(this));
+    }
+
     void operator=(AnInstruction&) = delete;
     AnInstruction() = delete;
 
@@ -232,17 +241,21 @@ class VarArgInstruction : public Super {
     std::vector<PirType> arg_type;
 
   protected:
-    size_t nargs() override { return arg_.size(); }
     Value** args() override { return arg_.data(); }
     const PirType* types() override { return arg_type.data(); }
 
   public:
+    size_t nargs() override { return arg_.size(); }
     bool mightIO() override { return IO; }
     bool changesEnv() override { return MOD_ENV; }
 
-    VarArgInstruction(VarArgInstruction&) = delete;
     void operator=(VarArgInstruction&) = delete;
     VarArgInstruction() = delete;
+
+    Instruction* clone() override {
+        assert(Base::Cast(this));
+        return new Base(*static_cast<Base*>(this));
+    }
 
     void push_arg(Value* a) {
         assert(arg_.size() == arg_type.size());
@@ -400,6 +413,9 @@ class MkClsFun : public AnInstruction<ITag::MkClsFun, MkClsFun, 0, false, false,
 class Call : public VarArgInstruction<ITag::Call, Call, true, true,
                                       InstructionWithEnv<true>> {
   public:
+    Value* cls() { return arg(0); }
+    Value* callArg(size_t n) { return arg(n + 1); }
+
     Call(Env* e, Value* fun, const std::vector<Value*>& args)
         : VarArgInstruction(PirType::valOrLazy(), e) {
         this->push_arg(RType::closure, fun);

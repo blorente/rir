@@ -13,5 +13,13 @@ bool Query::pure(Code* c) {
         return true;
     });
 }
+bool Query::noEnv(Code* c) {
+    return Visitor::check(c->entry, [](BB* bb) {
+        for (auto i : bb->instr)
+            if (i->needsEnv())
+                return false;
+        return true;
+    });
+}
 }
 }

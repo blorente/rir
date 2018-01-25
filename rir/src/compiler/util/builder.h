@@ -13,9 +13,8 @@ class Builder {
     Code* code;
     Env* env;
     BB* bb;
-    unsigned id;
     Builder(Function* fun, Code* code, Env* env, BB* bb)
-        : function(fun), code(code), env(env), bb(bb), id(bb->id + 1) {}
+        : function(fun), code(code), env(env), bb(bb) {}
 
     template <class T>
     T* operator()(T* i) {
@@ -24,7 +23,7 @@ class Builder {
         return i;
     }
 
-    BB* createBB() { return new BB(id++); }
+    BB* createBB();
 
     void next(BB* b) {
         bb->next0 = b;

@@ -36,6 +36,27 @@ BB::Instrs::iterator BB::remove(Instrs::iterator it) {
     return itup;
 }
 
+BB::Instrs::iterator BB::moveTo(Instrs::iterator it, BB* other) {
+    Instruction* i = *it;
+    i->bb_ = other;
+    other->instr.push_back(i);
+    auto itup = instr.erase(it);
+    if (itup != instr.begin())
+        itup--;
+    return itup;
+}
+
+BB* BB::cloneInstrs(BB* src) {
+    BB* c = new BB(src->id);
+    for (auto i : src->instr) {
+        Instruction* ic = i->clone();
+        ic->bb_ = c;
+        c->instr.push_back(ic);
+    }
+    c->next0 = c->next1 = nullptr;
+    return c;
+}
+
 void BB::replace(Instrs::iterator it, Instruction* i) {
     delete *it;
     *it = i;
