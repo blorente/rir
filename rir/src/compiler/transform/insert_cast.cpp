@@ -29,7 +29,7 @@ void InsertCast::apply(BB* bb) {
     for (auto i = bb->instr.begin(); i != bb->instr.end(); ++i) {
         auto instr = *i;
         Phi* p = nullptr;
-        if ((p = Phi::cast(instr))) {
+        if ((p = Phi::Cast(instr))) {
             p->updateType();
         }
         instr->map_arg([&i, bb](Value* v, PirType t) -> Value* {

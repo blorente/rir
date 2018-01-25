@@ -78,7 +78,7 @@ bool Verifier::verify(Instruction* i, BB* bb) {
                       << " which is not a subtype of " << t << "\n";
             success = false;
         }
-        if (!Phi::cast(i)) {
+        if (!Phi::Cast(i)) {
             v->bb([&](BB* valueBB) {
                 // if (valueBB != bb) {
                 //     std::cerr << "Error at instruction '";

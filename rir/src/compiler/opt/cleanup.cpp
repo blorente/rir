@@ -45,6 +45,16 @@ class TheCleanup {
                     break;
             }
         });
+
+        Visitor::run(function->entry, [&](BB* bb) {
+            for (auto it = bb->instr.begin(); it != bb->instr.end(); it++) {
+                Instruction* i = *it;
+                Phi* phi = Phi::Cast(i);
+                if (phi) {
+                    phi->updateType();
+                }
+            }
+        });
     }
 };
 }

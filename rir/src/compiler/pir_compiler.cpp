@@ -220,7 +220,7 @@ class CodeCompiler {
 
         assert(m.stack_size() == s.stack_size());
         for (size_t i = 0; i < m.stack_size(); ++i) {
-            Phi* p = Phi::cast(s.stack.at(i));
+            Phi* p = Phi::Cast(s.stack.at(i));
             assert(p);
             p->push_arg(m.stack.at(i));
         }

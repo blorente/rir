@@ -262,13 +262,13 @@ class VarArgInstruction : public Super {
     VarArgInstruction(PirType return_type, Env* env)
         : Super(class_tag, return_type, env) {}
 
-    static Base* cast(Value* v) {
+    static Base* Cast(Value* v) {
         if (v->kind == Kind::instruction)
-            return cast(static_cast<Instruction*>(v));
+            return Cast(static_cast<Instruction*>(v));
         return nullptr;
     }
 
-    static Base* cast(Instruction* i) {
+    static Base* Cast(Instruction* i) {
         if (i->tag == class_tag)
             return static_cast<Base*>(i);
         return nullptr;
