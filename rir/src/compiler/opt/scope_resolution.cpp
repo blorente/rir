@@ -231,14 +231,16 @@ class TheScopeResolution {
     Function* function;
     TheScopeResolution(Function* function) : function(function) {}
     void operator()() {
-        std::unordered_map<LdVar*, AbstractValue> loads;
+        std::unordered_map<Instruction*, AbstractValue> loads;
 
         ScopeAnalysis analyze(function);
         analyze([&](Instruction* i, AbstractEnv& env) {
-            LdVar* ld;
-            if ((ld = LdVar::Cast(i))) {
+            LdVar* ld = LdVar::Cast(i);
+            LdFun* ldf = LdFun::Cast(i);
+            if (ld)
                 loads[ld] = env.get(ld->varName);
-            }
+            else if (ldf)
+                loads[ldf] = env.get(ldf->varName);
         });
 
         bool needEnv = analyze.exitpoint.leaked;
@@ -254,14 +256,21 @@ class TheScopeResolution {
         Visitor::run(function->entry, [&](BB* bb) {
             for (auto it = bb->instr.begin(); it != bb->instr.end(); it++) {
                 Instruction* i = *it;
-                LdVar* ld;
+                LdVar* lda = LdVar::Cast(i);
+                LdFun* ldf = LdFun::Cast(i);
+                Instruction* ld = nullptr;
+                if (lda)
+                    ld = lda;
+                else if (ldf)
+                    ld = ldf;
                 if (!needEnv && StVar::Cast(i)) {
                     it = bb->remove(it);
-                } else if ((ld = LdVar::Cast(i))) {
+                } else if (ld) {
                     auto v = loads[ld];
                     if (v.singleValue()) {
-                        ld->replaceUsesWith(*v.vals.begin());
-                        if (!needEnv)
+                        Value* val = *v.vals.begin();
+                        ld->replaceUsesWith(val);
+                        if (!ld->changesEnv() || !val->type.maybeLazy())
                             it = bb->remove(it);
                     } else if (v.singleArg()) {
                         auto lda = new LdArg(*v.args.begin());

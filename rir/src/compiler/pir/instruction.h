@@ -296,6 +296,8 @@ class LdFun : public AnInstruction<ITag::LdFun, LdFun, 0, true, true,
         : AnInstruction(RType::closure, env), varName(name) {
         assert(TYPEOF(name) == SYMSXP);
     }
+
+    void printRhs(std::ostream& out) override;
 };
 
 class LdVar : public AnInstruction<ITag::LdVar, LdVar, 0, false, false,

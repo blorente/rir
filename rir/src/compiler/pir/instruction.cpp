@@ -92,6 +92,11 @@ void LdVar::printRhs(std::ostream& out) {
     out << " " << *env();
 }
 
+void LdFun::printRhs(std::ostream& out) {
+    out << name() << "(" << CHAR(PRINTNAME(varName)) << ")";
+    out << " " << *env();
+}
+
 void LdArg::printRhs(std::ostream& out) {
     out << name() << "(" << id << ")";
 }
