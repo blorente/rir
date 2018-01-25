@@ -42,8 +42,10 @@ class BB {
     typedef std::vector<Instruction*> Instrs;
 
     void append(Instruction* i);
+
     Instrs::iterator insert(Instrs::iterator it, Instruction* i);
     void replace(Instrs::iterator it, Instruction* i);
+
     BB::Instrs::iterator remove(Instrs::iterator it);
 
     void print(std::ostream& = std::cout);

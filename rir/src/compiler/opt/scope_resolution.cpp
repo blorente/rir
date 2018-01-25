@@ -44,11 +44,13 @@ struct AbstractValue {
     bool isUnknown() { return unknown; }
 
     bool singleValue() {
-        assert(!unknown);
+        if (unknown)
+            return false;
         return vals.size() == 1 && args.size() == 0;
     }
     bool singleArg() {
-        assert(!unknown);
+        if (unknown)
+            return false;
         return args.size() == 1 && vals.size() == 0;
     }
 
@@ -231,15 +233,15 @@ class TheScopeResolution {
     void operator()() {
         std::unordered_map<LdVar*, AbstractValue> loads;
 
-        ScopeAnalysis a(function);
-        a([&](Instruction* i, AbstractEnv& env) {
+        ScopeAnalysis analyze(function);
+        analyze([&](Instruction* i, AbstractEnv& env) {
             LdVar* ld;
             if ((ld = LdVar::Cast(i))) {
                 loads[ld] = env.get(ld->varName);
             }
         });
 
-        bool needEnv = a.exitpoint.leaked;
+        bool needEnv = analyze.exitpoint.leaked;
         if (!needEnv) {
             for (auto i : loads) {
                 if (std::get<1>(i).isUnknown()) {
@@ -257,8 +259,7 @@ class TheScopeResolution {
                     it = bb->remove(it);
                 } else if ((ld = LdVar::Cast(i))) {
                     auto v = loads[ld];
-                    if (v.isUnknown()) {
-                    } else if (v.singleValue()) {
+                    if (v.singleValue()) {
                         ld->replaceUsesWith(*v.vals.begin());
                         if (!needEnv)
                             it = bb->remove(it);
@@ -266,7 +267,7 @@ class TheScopeResolution {
                         auto lda = new LdArg(*v.args.begin());
                         ld->replaceUsesWith(lda);
                         bb->replace(it, lda);
-                    } else if (v.args.empty()) {
+                    } else if (!v.vals.empty() && v.args.empty()) {
                         // TODO: mixing args and vals, but placing the LdArgs is
                         // hard...
                         auto phi = new Phi;
@@ -281,9 +282,8 @@ class TheScopeResolution {
                         } else {
                             bb->replace(it, phi);
                         }
-                        break;
                     }
-                };
+                }
                 if (it == bb->instr.end())
                     return;
             }
