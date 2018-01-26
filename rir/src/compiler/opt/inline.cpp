@@ -60,8 +60,6 @@ struct PromiseEvaluationPoint : public std::vector<Instruction*> {
 
 class PromEvalAnalysis : public StaticAnalysis<PromiseEvaluationPoint> {
   public:
-    std::unordered_map<Instruction*, Instruction*> loadedAt;
-
     size_t nargs;
     PromEvalAnalysis(size_t nargs, BB* bb)
         : StaticAnalysis<PromiseEvaluationPoint>(bb), nargs(nargs) {}
@@ -77,7 +75,6 @@ class PromEvalAnalysis : public StaticAnalysis<PromiseEvaluationPoint> {
         if (!ld)
             return;
         p.evalAt(ld->id, i);
-        loadedAt[i] = p[ld->id];
     }
 };
 
@@ -129,7 +126,8 @@ class TheInliner {
                             continue;
                         MkArg* a = arguments[ld->id];
                         Value* strict = a->arg<0>();
-                        Instruction* dominatingLoad = promeval.loadedAt[i];
+                        Instruction* dominatingLoad =
+                            promeval.exitpoint[ld->id];
                         if (strict != Missing::instance()) {
                             ld->replaceUsesWith(strict);
                             it = bb->remove(it);
@@ -158,12 +156,12 @@ class TheInliner {
                 Visitor::run(copy, [&](BB* bb) {
                     for (auto it = bb->instr.begin(); it != bb->instr.end();
                          it++) {
-                        Instruction* i = *it;
                         LdArg* ld = LdArg::Cast(*it);
                         if (!ld)
                             continue;
                         MkArg* a = arguments[ld->id];
-                        Instruction* dominatingLoad = promeval.loadedAt[i];
+                        Instruction* dominatingLoad =
+                            promeval.exitpoint[ld->id];
                         if (promiseResult.count(dominatingLoad))
                             ld->replaceUsesWith(
                                 promiseResult.at(dominatingLoad));
