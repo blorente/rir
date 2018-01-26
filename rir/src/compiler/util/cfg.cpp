@@ -19,5 +19,7 @@ CFG::CFG(BB* start) {
             preds_[bb->next1->id].push_back(bb);
     });
 }
+
+CFG::Preds CFG::preds(BB* bb) { return preds_[bb->id]; }
 }
 }

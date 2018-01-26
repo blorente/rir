@@ -92,7 +92,8 @@ class CodeCompiler {
             push(b(new LdConst(bc.immediateConst())));
             break;
         case Opcode::ldvar_:
-            push(b(new LdVar(bc.immediateConst(), b.env)));
+            v = b(new LdVar(bc.immediateConst(), b.env));
+            push(b(new Force(v)));
             break;
         case Opcode::stvar_:
             v = pop();
@@ -291,9 +292,6 @@ Function* FunctionCompiler::operator()() {
     CodeCompiler c(b, src, src->body(), cmp);
     c(true);
 
-    ScopeResolution::apply(f);
-    Cleanup::apply(f);
-
     Verifier v(f);
     v();
     return f;
@@ -434,18 +432,35 @@ void PirCompiler::compileFunction(SEXP f) {
     TheCompiler cmp;
     cmp(f);
 
+    std::cout << "------ Compiled\n";
     cmp.m->print(std::cout);
-    std::cout << "------\n";
 
     for (auto f : cmp.m->function) {
-        Inline::apply(f);
         ScopeResolution::apply(f);
         Cleanup::apply(f);
         ScopeResolution::apply(f);
         Cleanup::apply(f);
     }
 
-    cmp.m->function.front()->print(std::cout);
+    std::cout << "------ Scope Resolution\n";
+    cmp.m->print(std::cout);
+
+    for (auto f : cmp.m->function) {
+        Inline::apply(f);
+    }
+
+    std::cout << "------ Inlined\n";
+    cmp.m->print(std::cout);
+
+    for (auto f : cmp.m->function) {
+        ScopeResolution::apply(f);
+        Cleanup::apply(f);
+        ScopeResolution::apply(f);
+        Cleanup::apply(f);
+    }
+
+    std::cout << "------ Scope Resolution\n";
+    cmp.m->print(std::cout);
 
     delete cmp.m;
 }

@@ -45,7 +45,21 @@ class TheCleanup {
                         it = bb->remove(it);
                     }
                 } else if (phi) {
+                    std::set<Value*> phin;
+                    phi->each_arg([&](Value* v, PirType) { phin.insert(v); });
+                    if (phin.size() < phi->nargs()) {
+                        Phi* newphi = new Phi;
+                        for (auto v : phin)
+                            newphi->push_arg(v);
+                        phi->replaceUsesWith(newphi);
+                        bb->replace(it, newphi);
+                        phi = newphi;
+                    }
                     phi->updateType();
+                    if (phin.size() == 1) {
+                        phi->replaceUsesWith(*phin.begin());
+                        it = bb->remove(it);
+                    }
                 } else if (arg) {
                     used_p.insert(arg->prom->id);
                 }
@@ -60,6 +74,49 @@ class TheCleanup {
                 function->promise[i] = nullptr;
             }
         }
+
+        CFG cfg(function->entry);
+
+        std::unordered_map<BB*, BB*> toDel;
+
+        Visitor::run(function->entry, [&](BB* bb) {
+            // Remove empty jump-through blocks
+            if (bb->jmp() && bb->next0->instr.empty() && bb->next0->jmp() &&
+                cfg.preds(bb->next0->next0).size() == 1) {
+                toDel[bb->next0] = bb->next0->next0;
+            }
+            // Remvove empty branches
+            if (bb->next0 && bb->next1) {
+                assert(bb->next0->jmp() && bb->next1->jmp());
+                if (bb->next0->empty() && bb->next1->empty() &&
+                    bb->next0->next0 == bb->next1->next0) {
+                    toDel[bb->next0] = bb->next0->next0;
+                    toDel[bb->next1] = bb->next0->next0;
+                    bb->next1 = nullptr;
+                    bb->remove(bb->instr.end() - 1);
+                }
+            }
+        });
+        if (function->entry->jmp() && function->entry->empty()) {
+            toDel[function->entry] = function->entry->next0;
+            function->entry = function->entry->next0;
+        }
+        Visitor::run(function->entry, [&](BB* bb) {
+            while (toDel.count(bb->next0))
+                bb->next0 = toDel[bb->next0];
+            assert(!toDel.count(bb->next1));
+        });
+        for (auto e : toDel) {
+            BB* bb = e.first;
+            bb->next0 = nullptr;
+            delete bb;
+        }
+
+        // Renumber
+        function->max_bb_id = 0;
+        Visitor::run(function->entry,
+                     [&](BB* bb) { bb->id = function->max_bb_id++; });
+        function->max_bb_id--;
     }
 };
 }

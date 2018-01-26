@@ -41,6 +41,9 @@ class BB {
     BB* next0 = nullptr;
     BB* next1 = nullptr;
 
+    bool jmp() { return next0 && !next1; }
+    bool empty() { return instr.size() == 0; }
+
     typedef std::vector<Instruction*> Instrs;
 
     void append(Instruction* i);
