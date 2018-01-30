@@ -3,6 +3,7 @@
 #include "../analysis/query.h"
 #include "../pir/pir_impl.h"
 #include "../transform/bb.h"
+#include "../transform/replace.h"
 #include "../util/cfg.h"
 #include "../util/visitor.h"
 #include "R/r.h"
@@ -94,17 +95,16 @@ class TheInliner {
                 if (!cls)
                     continue;
                 Function* fun = cls->fun;
-                if (!Query::noEnv(fun))
+                if (fun->arg_name.size() != call->nCallArgs())
                     continue;
-                if (fun->arg_name.size() != call->nargs() - 1)
-                    continue;
+                bool needCalleeEnv = !Query::noUnknownEnvAccess(fun, fun->env);
 
                 BB* split = BBTransform::split(++function->max_bb_id, bb, it);
 
                 Call* newCall = Call::Cast(*split->instr.begin());
                 std::vector<MkArg*> arguments;
-                for (size_t i = 0; i < newCall->nargs() - 1; ++i) {
-                    MkArg* a = MkArg::Cast(newCall->callArg(i));
+                for (size_t i = 0; i < newCall->nCallArgs(); ++i) {
+                    MkArg* a = MkArg::Cast(newCall->callArgs()[i]);
                     assert(a);
                     arguments.push_back(a);
                 }
@@ -175,6 +175,12 @@ class TheInliner {
 
                 Value* inlineeRes = BBTransform::forInline(copy, split);
                 newCall->replaceUsesWith(inlineeRes);
+                if (needCalleeEnv) {
+                    MkEnv* env = new MkEnv(cls->env(), fun->arg_name,
+                                           newCall->callArgs());
+                    copy->insert(copy->instr.begin(), env);
+                    Replace::usesOfValue(copy, fun->env, env);
+                }
                 // Remove the call instruction
                 split->remove(split->instr.begin());
 

@@ -14,9 +14,14 @@
 namespace rir {
 namespace pir {
 
+static Value* UnknownParent = (Value*)-1;
+static Value* UninitializedParent = nullptr;
+
 template <class AbstractValue>
 struct AbstractEnvironment {
     std::unordered_map<SEXP, AbstractValue> entries;
+
+    Value* parentEnv = UninitializedParent;
 
     bool leaked = false;
     bool tainted = false;
@@ -42,7 +47,7 @@ struct AbstractEnvironment {
         out << "\n";
     }
 
-    AbstractValue& get(SEXP e) {
+    const AbstractValue& get(SEXP e) {
         static AbstractValue t = AbstractValue::tainted();
         if (entries.count(e))
             return entries.at(e);
@@ -61,7 +66,17 @@ struct AbstractEnvironment {
         for (auto e : other.entries)
             keys.insert(std::get<0>(e));
         for (auto n : keys) {
-            changed = changed || entries[n].merge(other.get(n));
+            if (entries[n].merge(other.get(n)))
+                changed = true;
+        }
+        if (parentEnv == UninitializedParent &&
+            other.parentEnv != UninitializedParent) {
+            parentEnv = other.parentEnv;
+            changed = true;
+        }
+        if (parentEnv != other.parentEnv) {
+            parentEnv = UnknownParent;
+            changed = true;
         }
         return changed;
     }
@@ -123,21 +138,62 @@ class StaticAnalysis {
 };
 
 template <class AbstractValue>
-class StaticAnalysisForEnvironments
-    : public StaticAnalysis<AbstractEnvironment<AbstractValue>> {
+class AbstractEnvironmentSet
+    : public std::unordered_map<Value*, AbstractEnvironment<AbstractValue>> {
   public:
-    typedef AbstractEnvironment<AbstractValue> AbstractEnv;
+    typedef std::pair<Value*, AbstractValue> AbstractLoadVal;
+    bool merge(AbstractEnvironmentSet& other) {
+        bool changed = false;
+        std::set<Value*> k;
+        for (auto e : *this)
+            k.insert(e.first);
+        for (auto e : other)
+            k.insert(e.first);
+        for (auto i : k)
+            if ((*this)[i].merge(other[i]))
+                changed = true;
+        return changed;
+    }
+    void clear() {
+        for (auto e : *this)
+            e.second.clear();
+    }
+
+    AbstractLoadVal get(Value* env, SEXP e) {
+        while (env != UnknownParent) {
+            assert(env);
+            const AbstractValue& res = (*this)[env].get(e);
+            if (!res.isUnknown())
+                return AbstractLoadVal(env, res);
+            env = (*this)[env].parentEnv;
+        }
+        return AbstractLoadVal(env, AbstractValue::tainted());
+    }
+};
+
+template <class AbstractValue>
+class StaticAnalysisForEnvironments
+    : public StaticAnalysis<AbstractEnvironmentSet<AbstractValue>> {
+  public:
+    typedef AbstractEnvironmentSet<AbstractValue> A;
+    typedef AbstractEnvironment<AbstractValue> E;
+    typedef std::pair<Value*, AbstractValue> AbstractLoadVal;
 
     const std::vector<SEXP>& args;
 
-    StaticAnalysisForEnvironments(const std::vector<SEXP>& args, BB* bb)
-        : StaticAnalysis<AbstractEnv>(bb), args(args) {}
+    Value* localScope;
 
-    void init(AbstractEnv& initial) override {
+    StaticAnalysisForEnvironments(Value* localScope,
+                                  const std::vector<SEXP>& args, BB* bb)
+        : StaticAnalysis<A>(bb), args(args), localScope(localScope) {}
+
+    void init(A& initial) override {
+        E& env = initial[localScope];
         size_t id = 0;
         for (auto a : args) {
-            initial.set_arg(a, id++);
+            env.set_arg(a, id++);
         }
+        env.parentEnv = UnknownParent;
     }
 };
 }

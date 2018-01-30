@@ -30,6 +30,7 @@
     V(ChkMissing)                                                              \
     V(ChkClosure)                                                              \
     V(Call)                                                                    \
+    V(MkEnv)                                                                   \
     V(Force)
 
 namespace rir {
@@ -68,6 +69,7 @@ class Instruction : public Value {
     virtual bool changesEnv() = 0;
     virtual bool leaksEnv() { return false; }
     virtual bool needsEnv() { return false; }
+    virtual Value* env() = 0;
 
     virtual Instruction* clone() = 0;
 
@@ -136,77 +138,38 @@ class Instruction : public Value {
     }
 };
 
-template <bool LEAKS_ENV>
-class InstructionWithEnv : public Instruction {
-    Env* env_;
-
-  public:
-    bool needsEnv() override { return true; }
-    bool leaksEnv() override { return LEAKS_ENV; }
-    Env* env() { return env_; }
-    InstructionWithEnv(ITag tag, PirType t, Env* env)
-        : Instruction(tag, t), env_(env) {}
+enum class EnvAccess : uint8_t {
+    None,
+    Read,
+    Write,
+    Leak,
 };
 
-template <ITag class_tag, class Base, size_t ARGS, bool IO, bool MOD_ENV,
-          class Super = Instruction>
-class AnInstruction : public Super {
-    std::array<Value*, ARGS> arg_;
+enum class Effect : uint8_t {
+    None,
+    Warn,
+    Error,
+    Print,
+    Any,
+};
 
-  protected:
-    Value** args() override { return &arg_[0]; }
-    const PirType* types() override { return &arg_type[0]; }
-
+template <ITag class_tag, class Base, Effect EFFECT, EnvAccess ENV>
+class InstructionDescription : public Instruction {
   public:
-    size_t nargs() override { return ARGS; }
-    bool mightIO() override { return IO; }
-    bool changesEnv() override { return MOD_ENV; }
+    InstructionDescription(PirType return_type)
+        : Instruction(class_tag, return_type) {}
+
+    void operator=(InstructionDescription&) = delete;
+    InstructionDescription() = delete;
+
+    bool mightIO() override { return EFFECT > Effect::None; }
+    bool changesEnv() override { return ENV >= EnvAccess::Write; }
+    bool leaksEnv() override { return ENV == EnvAccess::Leak; }
+    bool needsEnv() override { return ENV > EnvAccess::None; }
 
     Instruction* clone() override {
         assert(Base::Cast(this));
         return new Base(*static_cast<Base*>(this));
-    }
-
-    void operator=(AnInstruction&) = delete;
-    AnInstruction() = delete;
-
-    const std::array<PirType, ARGS> arg_type;
-
-    template <unsigned pos>
-    Value* arg(Value* v) {
-        static_assert(pos < ARGS, "This instruction has less arguments");
-        arg_[pos] = v;
-        return v;
-    }
-
-    template <unsigned pos>
-    Value* arg() {
-        static_assert(pos < ARGS, "This instruction has less arguments");
-        return arg_[pos];
-    }
-
-    template <unsigned pos>
-    PirType type() {
-        static_assert(pos < ARGS, "This instruction has less arguments");
-        return arg_type[pos];
-    }
-
-    AnInstruction(PirType return_type, const std::array<PirType, ARGS>& at,
-                  const std::array<Value*, ARGS>& arg)
-        : Super(class_tag, return_type), arg_(arg), arg_type(at) {}
-
-    AnInstruction(PirType return_type)
-        : Super(class_tag, return_type), arg_type({}) {
-        static_assert(ARGS == 0, "Missing arguments");
-    }
-
-    AnInstruction(PirType return_type, const std::array<PirType, ARGS>& at,
-                  const std::array<Value*, ARGS>& arg, Env* env)
-        : Super(class_tag, return_type, env), arg_(arg), arg_type(at) {}
-
-    AnInstruction(PirType return_type, Env* env)
-        : Super(class_tag, return_type, env), arg_type({}) {
-        static_assert(ARGS == 0, "Missing arguments");
     }
 
     static Base* Cast(Value* v) {
@@ -234,33 +197,126 @@ class AnInstruction : public Super {
     }
 };
 
-template <ITag class_tag, class Base, bool IO, bool MOD_ENV,
-          class Super = Instruction>
-class VarArgInstruction : public Super {
+template <ITag class_tag, class Base, size_t ARGS, Effect EFFECT, EnvAccess ENV>
+class FixedLenInstruction
+    : public InstructionDescription<class_tag, Base, EFFECT, ENV> {
+  private:
+    typedef InstructionDescription<class_tag, Base, EFFECT, ENV> Super;
+    std::array<Value*, ARGS> arg_;
+    const std::array<PirType, ARGS> arg_type;
+
+  protected:
+    Value** args() override { return &arg_[0]; }
+    const PirType* types() override { return &arg_type[0]; }
+
+  public:
+    size_t nargs() override { return ARGS; }
+
+    Value* env() override {
+        // TODO find a better way
+        assert(ENV != EnvAccess::None);
+        Value* env = arg_[ARGS - 1];
+        return env;
+    }
+
+    template <unsigned pos>
+    Value* arg(Value* v) {
+        static_assert(pos < ARGS, "This instruction has less arguments");
+        arg_[pos] = v;
+        return v;
+    }
+
+    template <unsigned pos>
+    Value* arg() {
+        static_assert(pos < ARGS, "This instruction has less arguments");
+        return arg_[pos];
+    }
+
+    template <unsigned pos>
+    PirType type() {
+        static_assert(pos < ARGS, "This instruction has less arguments");
+        return arg_type[pos];
+    }
+
+    struct ArgTypesWithEnv : public std::array<PirType, ARGS> {
+        ArgTypesWithEnv(const std::array<PirType, ARGS - 1>& a) {
+            for (size_t i = 0; i < ARGS - 1; ++i)
+                (*this)[i] = a[i];
+            (*this)[ARGS - 1] = RType::env;
+        }
+        ArgTypesWithEnv() : std::array<PirType, ARGS>({RType::env}) {}
+    };
+    struct ArgsWithEnv : public std::array<Value*, ARGS> {
+        ArgsWithEnv(const std::array<Value*, ARGS - 1>& a, Value* env) {
+            for (size_t i = 0; i < ARGS - 1; ++i)
+                (*this)[i] = a[i];
+            (*this)[ARGS - 1] = env;
+        }
+        ArgsWithEnv(Value* env) : std::array<Value*, ARGS>({env}) {}
+    };
+
+    FixedLenInstruction(PirType return_type, Value* env)
+        : Super(return_type), arg_(ArgsWithEnv(env)),
+          arg_type(ArgTypesWithEnv()) {
+        static_assert(ARGS == 1, "Missing args");
+        static_assert(ENV != EnvAccess::None,
+                      "This instruction has no environment access");
+    }
+
+    FixedLenInstruction(PirType return_type)
+        : Super(return_type), arg_({}), arg_type({}) {
+        static_assert(ARGS == 0, "Missing args");
+        static_assert(ENV == EnvAccess::None,
+                      "This instruction needs an environment");
+    }
+
+    FixedLenInstruction(PirType return_type,
+                        const std::array<PirType, ARGS - 1>& at,
+                        const std::array<Value*, ARGS - 1>& arg, Value* env)
+        : Super(return_type), arg_(ArgsWithEnv(arg, env)),
+          arg_type(ArgTypesWithEnv(at)) {
+        static_assert(ENV != EnvAccess::None,
+                      "This instruction has no environment access");
+        static_assert(ARGS > 1, "Instruction with env but no args?");
+    }
+
+    FixedLenInstruction(PirType return_type,
+                        const std::array<PirType, ARGS>& at,
+                        const std::array<Value*, ARGS>& arg)
+        : Super(return_type), arg_(arg), arg_type(at) {
+        static_assert(ENV == EnvAccess::None,
+                      "This instruction needs an environment");
+    }
+};
+
+template <ITag class_tag, class Base, Effect EFFECT, EnvAccess ENV>
+class VarLenInstruction
+    : public InstructionDescription<class_tag, Base, EFFECT, ENV> {
+  private:
+    typedef InstructionDescription<class_tag, Base, EFFECT, ENV> Super;
+
     std::vector<Value*> arg_;
     std::vector<PirType> arg_type;
-
   protected:
     Value** args() override { return arg_.data(); }
     const PirType* types() override { return arg_type.data(); }
 
   public:
     size_t nargs() override { return arg_.size(); }
-    bool mightIO() override { return IO; }
-    bool changesEnv() override { return MOD_ENV; }
 
-    void operator=(VarArgInstruction&) = delete;
-    VarArgInstruction() = delete;
-
-    Instruction* clone() override {
-        assert(Base::Cast(this));
-        return new Base(*static_cast<Base*>(this));
+    Value* env() override {
+        // TODO find a better way
+        assert(ENV != EnvAccess::None);
+        Value* env = arg_[0];
+        return env;
     }
 
     void push_arg(Value* a) {
         assert(arg_.size() == arg_type.size());
         arg_type.push_back(a->type);
         arg_.push_back(a);
+        assert(arg_.size() > 1 || ENV == EnvAccess::None ||
+               arg_type[0] == RType::env);
     }
 
     void push_arg(PirType t, Value* a) {
@@ -268,98 +324,98 @@ class VarArgInstruction : public Super {
         assert(t >= a->type);
         arg_type.push_back(t);
         arg_.push_back(a);
+        assert(arg_.size() > 1 || ENV == EnvAccess::None ||
+               arg_type[0] == RType::env);
     }
 
-    VarArgInstruction(PirType return_type) : Super(class_tag, return_type) {}
-
-    VarArgInstruction(PirType return_type, Env* env)
-        : Super(class_tag, return_type, env) {}
-
-    static Base* Cast(Value* v) {
-        if (v->kind == Kind::instruction)
-            return Cast(static_cast<Instruction*>(v));
-        return nullptr;
+    VarLenInstruction(PirType return_type) : Super(return_type) {
+        static_assert(ENV == EnvAccess::None,
+                      "This instruction needs an environment");
     }
 
-    static Base* Cast(Instruction* i) {
-        if (i->tag == class_tag)
-            return static_cast<Base*>(i);
-        return nullptr;
+    VarLenInstruction(PirType return_type, Value* env) : Super(return_type) {
+        static_assert(ENV > EnvAccess::None,
+                      "This instruction has no environment access");
+        push_arg(RType::env, env);
     }
 };
 
 extern std::ostream& operator<<(std::ostream& out, Instruction::Id id);
 
-class LdConst : public AnInstruction<ITag::LdConst, LdConst, 0, false, false> {
+#define FLI(type, nargs, io, env)                                              \
+    type:                                                                      \
+  public                                                                       \
+    FixedLenInstruction<ITag::type, type, nargs, io, env>
+
+class FLI(LdConst, 0, Effect::None, EnvAccess::None) {
   public:
-    LdConst(SEXP c, PirType t) : AnInstruction(t), c(c) {}
-    LdConst(SEXP c) : AnInstruction(PirType::val()), c(c) {}
+    LdConst(SEXP c, PirType t) : FixedLenInstruction(t), c(c) {}
+    LdConst(SEXP c) : FixedLenInstruction(PirType::val()), c(c) {}
     SEXP c;
     void printRhs(std::ostream& out) override;
 };
 
-class LdFun : public AnInstruction<ITag::LdFun, LdFun, 0, true, true,
-                                   InstructionWithEnv<false>> {
+class FLI(LdFun, 1, Effect::Any, EnvAccess::Write) {
   public:
     SEXP varName;
 
-    LdFun(const char* name, Env* env)
-        : AnInstruction(RType::closure, env), varName(Rf_install(name)) {}
-    LdFun(SEXP name, Env* env)
-        : AnInstruction(RType::closure, env), varName(name) {
+    LdFun(const char* name, Value* env)
+        : FixedLenInstruction(RType::closure, env), varName(Rf_install(name)) {}
+    LdFun(SEXP name, Value* env)
+        : FixedLenInstruction(RType::closure, env), varName(name) {
         assert(TYPEOF(name) == SYMSXP);
     }
 
     void printRhs(std::ostream& out) override;
 };
 
-class LdVar : public AnInstruction<ITag::LdVar, LdVar, 0, false, false,
-                                   InstructionWithEnv<false>> {
+class FLI(LdVar, 1, Effect::None, EnvAccess::Read) {
   public:
     SEXP varName;
 
-    LdVar(const char* name, Env* env)
-        : AnInstruction(PirType::any(), env), varName(Rf_install(name)) {}
-    LdVar(SEXP name, Env* env)
-        : AnInstruction(PirType::any(), env), varName(name) {
+    LdVar(const char* name, Value* env)
+        : FixedLenInstruction(PirType::any(), env), varName(Rf_install(name)) {}
+    LdVar(SEXP name, Value* env)
+        : FixedLenInstruction(PirType::any(), env), varName(name) {
         assert(TYPEOF(name) == SYMSXP);
     }
 
     void printRhs(std::ostream& out) override;
 };
 
-class LdArg : public AnInstruction<ITag::LdArg, LdArg, 0, false, false> {
+class FLI(LdArg, 1, Effect::None, EnvAccess::Read) {
   public:
     size_t id;
 
-    LdArg(size_t id) : AnInstruction(PirType::valOrLazy()), id(id) {}
+    LdArg(size_t id, Value* env)
+        : FixedLenInstruction(PirType::valOrLazy(), env), id(id) {}
 
     void printRhs(std::ostream& out) override;
 };
 
-class ChkMissing
-    : public AnInstruction<ITag::ChkMissing, ChkMissing, 1, true, false> {
+class FLI(ChkMissing, 1, Effect::Warn, EnvAccess::None) {
   public:
     ChkMissing(Value* in)
-        : AnInstruction(PirType::valOrLazy(), {{PirType::any()}}, {{in}}) {}
+        : FixedLenInstruction(PirType::valOrLazy(), {{PirType::any()}},
+                              {{in}}) {}
 };
 
-class ChkClosure
-    : public AnInstruction<ITag::ChkClosure, ChkClosure, 1, true, false> {
+class FLI(ChkClosure, 1, Effect::Warn, EnvAccess::None) {
   public:
     ChkClosure(Value* in)
-        : AnInstruction(RType::closure, {{PirType::val()}}, {{in}}) {}
+        : FixedLenInstruction(RType::closure, {{PirType::val()}}, {{in}}) {}
 };
 
-class StVar : public AnInstruction<ITag::StVar, StVar, 1, true, true,
-                                   InstructionWithEnv<false>> {
+class FLI(StVar, 2, Effect::None, EnvAccess::Write) {
   public:
-    StVar(SEXP name, Value* val, Env* env)
-        : AnInstruction(PirType::voyd(), {{PirType::val()}}, {{val}}, env),
+    StVar(SEXP name, Value* val, Value* env)
+        : FixedLenInstruction(PirType::voyd(), {{PirType::val()}}, {{val}},
+                              env),
           varName(name) {}
 
-    StVar(const char* name, Value* val, Env* env)
-        : AnInstruction(PirType::voyd(), {{PirType::val()}}, {{val}}, env),
+    StVar(const char* name, Value* val, Value* env)
+        : FixedLenInstruction(PirType::voyd(), {{PirType::val()}}, {{val}},
+                              env),
           varName(Rf_install(name)) {}
 
     SEXP varName;
@@ -368,86 +424,116 @@ class StVar : public AnInstruction<ITag::StVar, StVar, 1, true, true,
     void printRhs(std::ostream& out) override;
 };
 
-class Branch : public AnInstruction<ITag::Branch, Branch, 1, false, false> {
+class FLI(Branch, 1, Effect::None, EnvAccess::None) {
   public:
     Branch(Value* test)
-        : AnInstruction(PirType::voyd(), {{NativeType::test}}, {{test}}) {}
+        : FixedLenInstruction(PirType::voyd(), {{NativeType::test}}, {{test}}) {
+    }
     void printRhs(std::ostream& out) override;
 };
 
-class Return : public AnInstruction<ITag::Return, Return, 1, false, false> {
+class FLI(Return, 1, Effect::None, EnvAccess::None) {
   public:
     Return(Value* ret)
-        : AnInstruction(PirType::voyd(), {{PirType::val()}}, {{ret}}) {}
+        : FixedLenInstruction(PirType::voyd(), {{PirType::val()}}, {{ret}}) {}
 };
 
 class Promise;
-class MkArg : public AnInstruction<ITag::MkArg, MkArg, 1, false, false,
-                                   InstructionWithEnv<false>> {
+class FLI(MkArg, 2, Effect::None, EnvAccess::Read) {
   public:
     Promise* prom;
-    MkArg(Promise* prom, Value* v, Env* env)
-        : AnInstruction(RType::prom, {{PirType::valOrMissing()}}, {{v}}, env),
+    MkArg(Promise* prom, Value* v, Value* env)
+        : FixedLenInstruction(RType::prom, {{PirType::valOrMissing()}}, {{v}},
+                              env),
           prom(prom) {}
     void printRhs(std::ostream& out) override;
 };
 
-class MkCls : public AnInstruction<ITag::MkCls, MkCls, 3, false, false,
-                                   InstructionWithEnv<false>> {
+class FLI(MkCls, 4, Effect::None, EnvAccess::Read) {
   public:
-    MkCls(Value* code, Value* arg, Value* src, Env* parent)
-        : AnInstruction(RType::closure,
-                        {{RType::code, PirType::list(), PirType::any()}},
-                        {{code, arg, src}}, parent) {}
+    MkCls(Value* code, Value* arg, Value* src, Value* parent)
+        : FixedLenInstruction(RType::closure,
+                              {{RType::code, PirType::list(), PirType::any()}},
+                              {{code, arg, src}}, parent) {}
 };
 
-class MkClsFun : public AnInstruction<ITag::MkClsFun, MkClsFun, 0, false, false,
-                                      InstructionWithEnv<false>> {
+class FLI(MkClsFun, 1, Effect::None, EnvAccess::Read) {
   public:
     Function* fun;
-    MkClsFun(Function* fun, Env* env)
-        : AnInstruction(RType::closure, env), fun(fun) {}
+    MkClsFun(Function* fun, Value* env)
+        : FixedLenInstruction(RType::closure, env), fun(fun) {}
     void printRhs(std::ostream& out) override;
 };
 
-class Call : public VarArgInstruction<ITag::Call, Call, true, true,
-                                      InstructionWithEnv<true>> {
+class FLI(Force, 1, Effect::Any, EnvAccess::None) {
   public:
-    Value* cls() { return arg(0); }
-    Value* callArg(size_t n) { return arg(n + 1); }
+    Force(Value* in)
+        : FixedLenInstruction(PirType::val(), {{PirType::any()}}, {{in}}) {}
+};
 
-    Call(Env* e, Value* fun, const std::vector<Value*>& args)
-        : VarArgInstruction(PirType::valOrLazy(), e) {
+class FLI(AsLogical, 1, Effect::Warn, EnvAccess::None) {
+  public:
+    AsLogical(Value* in)
+        : FixedLenInstruction(RType::logical, {{PirType::val()}}, {{in}}) {}
+};
+
+class FLI(AsTest, 1, Effect::None, EnvAccess::None) {
+  public:
+    AsTest(Value* in)
+        : FixedLenInstruction(NativeType::test, {{RType::logical}}, {{in}}) {}
+};
+
+#define VLI(type, io, env)                                                     \
+    type:                                                                      \
+  public                                                                       \
+    VarLenInstruction<ITag::type, type, io, env>
+
+class VLI(Call, Effect::Any, EnvAccess::Leak) {
+  public:
+    Value* cls() { return arg(1); }
+    Value** callArgs() { return &args()[2]; }
+    const PirType* callTypes() { return &types()[2]; }
+    size_t nCallArgs() { return nargs() - 2; }
+
+    Call(Value* e, Value* fun, const std::vector<Value*>& args)
+        : VarLenInstruction(PirType::valOrLazy(), e) {
         this->push_arg(RType::closure, fun);
-        for (unsigned i = 1; i <= args.size(); ++i)
-            this->push_arg(RType::prom, args[i - 1]);
+        for (unsigned i = 0; i < args.size(); ++i)
+            this->push_arg(RType::prom, args[i]);
+    }
+
+    void eachCallArg(arg_iterator it) {
+        for (size_t i = 0; i < nCallArgs(); ++i) {
+            Value* v = callArgs()[i];
+            PirType t = callTypes()[i];
+            it(v, t);
+        }
+    }
+};
+
+class VLI(MkEnv, Effect::None, EnvAccess::Read) {
+    std::vector<SEXP> varName;
+
+  public:
+    typedef std::function<void(SEXP name, Value* val)> local_it;
+
+    void eachLocalVar(local_it it) {
+        for (size_t i = 1; i < nargs(); ++i)
+            it(varName[i - 1], arg(i));
+    }
+
+    MkEnv(Value* parent, const std::vector<SEXP>& names, Value** args)
+        : VarLenInstruction(RType::env, parent), varName(names) {
+        for (unsigned i = 0; i < varName.size(); ++i)
+            this->push_arg(RType::prom, args[i]);
     }
 
     void printRhs(std::ostream& out) override;
 };
 
-class Force : public AnInstruction<ITag::Force, Force, 1, true, true> {
+class VLI(Phi, Effect::None, EnvAccess::None) {
   public:
-    Force(Value* in)
-        : AnInstruction(PirType::val(), {{PirType::any()}}, {{in}}) {}
-};
-
-class AsLogical
-    : public AnInstruction<ITag::AsLogical, AsLogical, 1, true, false> {
-  public:
-    AsLogical(Value* in)
-        : AnInstruction(RType::logical, {{PirType::val()}}, {{in}}) {}
-};
-
-class AsTest : public AnInstruction<ITag::AsTest, AsTest, 1, false, false> {
-  public:
-    AsTest(Value* in)
-        : AnInstruction(NativeType::test, {{RType::logical}}, {{in}}) {}
-};
-
-class Phi : public VarArgInstruction<ITag::Phi, Phi, false, false> {
-  public:
-    Phi() : VarArgInstruction(PirType::any()) {}
+    Phi() : VarLenInstruction(PirType::any()) {}
     void updateType();
 };
 }

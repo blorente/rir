@@ -1,5 +1,6 @@
 #include "scope_resolution.h"
 #include "../analysis/generic_static_analysis.h"
+#include "../analysis/query.h"
 #include "../pir/pir_impl.h"
 #include "../util/cfg.h"
 #include "../util/visitor.h"
@@ -42,7 +43,7 @@ struct AbstractValue {
         type = PirType::any();
     }
 
-    bool isUnknown() { return unknown; }
+    bool isUnknown() const { return unknown; }
 
     bool singleValue() {
         if (unknown)
@@ -55,7 +56,7 @@ struct AbstractValue {
         return args.size() == 1 && vals.size() == 0;
     }
 
-    bool merge(AbstractValue& other) {
+    bool merge(const AbstractValue& other) {
         assert(other.type != PirType::bottom());
 
         if (unknown)
@@ -108,38 +109,44 @@ struct AbstractValue {
 
 class ScopeAnalysis : public StaticAnalysisForEnvironments<AbstractValue> {
   public:
-    std::unordered_map<Instruction*, AbstractValue> loads;
+    std::unordered_map<Instruction*, AbstractLoadVal> loads;
 
-    ScopeAnalysis(const std::vector<SEXP>& args, BB* bb)
-        : StaticAnalysisForEnvironments(args, bb) {}
+    ScopeAnalysis(Value* localScope, const std::vector<SEXP>& args, BB* bb)
+        : StaticAnalysisForEnvironments(localScope, args, bb) {}
 
-    void apply(AbstractEnv& env, Instruction* i) override {
+    void apply(A& envs, Instruction* i) override {
         StVar* s = StVar::Cast(i);
         LdVar* ld = LdVar::Cast(i);
         LdFun* ldf = LdFun::Cast(i);
         Force* force = Force::Cast(i);
+        MkEnv* mk = MkEnv::Cast(i);
 
         if (ld) {
-            loads[ld] = env.get(ld->varName);
+            loads[ld] = envs.get(ld->env(), ld->varName);
         } else if (ldf) {
-            loads[ldf] = env.get(ldf->varName);
+            loads[ldf] = envs.get(ldf->env(), ldf->varName);
         } else if (s) {
-            env.set(s->varName, s->val());
+            envs[s->env()].set(s->varName, s->val());
             return;
+        } else if (mk) {
+            Value* parentEnv = mk->env();
+            envs[mk].parentEnv = parentEnv;
+            mk->eachLocalVar(
+                [&](SEXP name, Value* val) { envs[mk].set(name, val); });
         } else if (force) {
             Value* v = force->arg<0>();
             ld = LdVar::Cast(v);
             if (ld) {
-                if (env.get(ld->varName).isUnknown())
-                    env.set(ld->varName, force);
+                if (!envs[ld->env()].get(ld->varName).isUnknown())
+                    envs[ld->env()].set(ld->varName, force);
             }
         }
 
-        if (!env.leaked && i->leaksEnv()) {
-            env.leaked = true;
+        if (i->leaksEnv()) {
+            envs[i->env()].leaked = true;
         }
-        if (env.leaked && i->changesEnv()) {
-            env.taint();
+        if (i->changesEnv()) {
+            envs[i->env()].taint();
         }
     }
 };
@@ -149,17 +156,13 @@ class TheScopeResolution {
     Function* function;
     TheScopeResolution(Function* function) : function(function) {}
     void operator()() {
-        ScopeAnalysis analysis(function->arg_name, function->entry);
+        ScopeAnalysis analysis(function->env, function->arg_name,
+                               function->entry);
         analysis();
 
-        bool needEnv = analysis.exitpoint.leaked;
+        bool needEnv = analysis.exitpoint[function->env].leaked;
         if (!needEnv) {
-            for (auto i : analysis.loads) {
-                if (std::get<1>(i).isUnknown()) {
-                    needEnv = true;
-                    break;
-                }
-            }
+            needEnv = Query::noUnknownEnvAccess(function, function->env);
         }
 
         Visitor::run(function->entry, [&](BB* bb) {
@@ -175,14 +178,16 @@ class TheScopeResolution {
                 if (!needEnv && StVar::Cast(i)) {
                     it = bb->remove(it);
                 } else if (ld) {
-                    auto v = analysis.loads[ld];
+                    auto aload = analysis.loads[ld];
+                    auto env = aload.first;
+                    auto v = aload.second;
                     if (v.singleValue()) {
                         Value* val = *v.vals.begin();
                         ld->replaceUsesWith(val);
                         if (!ld->changesEnv() || !val->type.maybeLazy())
                             it = bb->remove(it);
                     } else if (v.singleArg()) {
-                        auto lda = new LdArg(*v.args.begin());
+                        auto lda = new LdArg(*v.args.begin(), env);
                         ld->replaceUsesWith(lda);
                         bb->replace(it, lda);
                     } else if (!v.vals.empty() && v.args.empty()) {

@@ -52,16 +52,17 @@ struct PirType {
     };
     Type t_;
 
-    PirType(RType t) : rtype_(true), t_(t) {
+    PirType() : PirType(RTypeSet()) {}
+    PirType(const RType& t) : rtype_(true), t_(t) {
         assert(t > RType::unused && t < RType::max);
     }
-    PirType(NativeType t) : rtype_(false), t_(t) {
+    PirType(const NativeType& t) : rtype_(false), t_(t) {
         assert(t > NativeType::unused && t < NativeType::max);
     }
-    PirType(RTypeSet t) : rtype_(true), t_(t) {}
-    PirType(NativeTypeSet t) : rtype_(false), t_(t) {}
+    PirType(const RTypeSet& t) : rtype_(true), t_(t) {}
+    PirType(const NativeTypeSet& t) : rtype_(false), t_(t) {}
 
-    void operator=(PirType o) {
+    void operator=(const PirType& o) {
         lazy_ = o.lazy_;
         missing_ = o.missing_;
         rtype_ = o.rtype_;
@@ -81,36 +82,36 @@ struct PirType {
     static PirType list() { return PirType(RType::cons) | RType::nil; }
     static PirType any() { return val().orLazy().orMissing(); }
 
-    bool maybeMissing() { return missing_; }
+    bool maybeMissing() const { return missing_; }
 
-    bool maybeLazy() { return lazy_; }
+    bool maybeLazy() const { return lazy_; }
 
-    PirType orMissing() {
+    PirType orMissing() const {
         assert(rtype_);
         PirType t = *this;
         t.missing_ = true;
         return t;
     }
 
-    PirType orLazy() {
+    PirType orLazy() const {
         assert(rtype_);
         PirType t = *this;
         t.lazy_ = true;
         return t;
     }
 
-    PirType baseType() {
+    PirType baseType() const {
         assert(rtype_);
         return PirType(t_.r);
     }
 
-    static PirType voyd() { return NativeTypeSet(); }
+    static const PirType voyd() { return NativeTypeSet(); }
 
-    static PirType missing() { return bottom().orMissing(); }
+    static const PirType missing() { return bottom().orMissing(); }
 
-    static PirType bottom() { return PirType(RTypeSet()); }
+    static const PirType bottom() { return PirType(RTypeSet()); }
 
-    PirType operator|(PirType o) {
+    PirType operator|(const PirType& o) const {
         if (!rtype_ && !o.rtype_) {
             return t_.n | o.t_.n;
         }
@@ -122,21 +123,21 @@ struct PirType {
         return r;
     }
 
-    bool operator==(NativeType o) { return !rtype_ && t_.n == o; }
+    bool operator==(const NativeType& o) const { return !rtype_ && t_.n == o; }
 
-    bool operator==(RType o) {
+    bool operator==(const RType& o) const {
         return rtype_ && !lazy_ && !missing_ && t_.r == o;
     }
 
-    bool operator!=(PirType o) { return !(*this == o); }
+    bool operator!=(const PirType& o) const { return !(*this == o); }
 
-    bool operator==(PirType o) {
+    bool operator==(const PirType& o) const {
         return rtype_ == o.rtype_ && lazy_ == o.lazy_ &&
                missing_ == o.missing_ &&
                (rtype_ ? t_.r == o.t_.r : t_.n == o.t_.n);
     }
 
-    bool operator>=(PirType o) {
+    bool operator>=(const PirType& o) const {
         if (rtype_ != o.rtype_) {
             return false;
         }

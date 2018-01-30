@@ -11,7 +11,7 @@ class BitSet {
                   "Maximal base type does not fit in bitfield");
     STORE set_;
 
-    STORE asSet(BASE_TYPE t) { return (1 << (std::size_t)t); }
+    STORE asSet(const BASE_TYPE& t) const { return (1 << (std::size_t)t); }
 
   public:
     typedef STORE Store;
@@ -19,38 +19,38 @@ class BitSet {
 
     BitSet() : set_(0) {}
 
-    BitSet(STORE set) : set_(set) {}
+    BitSet(const STORE& set) : set_(set) {}
 
-    BitSet(std::initializer_list<BASE_TYPE> ts) : set_(0) {
+    BitSet(const std::initializer_list<BASE_TYPE>& ts) : set_(0) {
         for (auto t : ts)
             set(t);
     }
 
-    BitSet(BASE_TYPE t) : set_(asSet(t)) {}
+    BitSet(const BASE_TYPE& t) : set_(asSet(t)) {}
 
     void set(BASE_TYPE t) {
         assert(t < BASE_TYPE::max);
         set_ |= asSet(t);
     }
 
-    bool contains(BASE_TYPE t) {
+    bool contains(const BASE_TYPE& t) const {
         assert(t < BASE_TYPE::max);
         return set_ & asSet(t);
     }
 
-    bool includes(BitSet s) { return (s.set_ & set_) == s.set_; }
+    bool includes(const BitSet& s) const { return (s.set_ & set_) == s.set_; }
 
-    void operator=(BitSet o) { set_ = o.set_; }
+    void operator=(const BitSet& o) { set_ = o.set_; }
 
-    bool operator==(BASE_TYPE t) { return asSet(t) == set_; }
+    bool operator==(const BASE_TYPE& t) const { return asSet(t) == set_; }
 
-    bool operator==(BitSet s) { return set_ == s.set_; }
+    bool operator==(const BitSet& s) const { return set_ == s.set_; }
 
-    BitSet operator|(BitSet s) { return BitSet(s.set_ | set_); }
+    BitSet operator|(const BitSet& s) const { return BitSet(s.set_ | set_); }
 
-    BitSet operator|(BASE_TYPE t) { return *this | BitSet(t); }
+    BitSet operator|(const BASE_TYPE& t) const { return *this | BitSet(t); }
 
-    std::size_t size() { return __builtin_popcount(set_); }
+    std::size_t size() const { return __builtin_popcount(set_); }
 };
 }
 

@@ -7,7 +7,9 @@ namespace rir {
 namespace pir {
 
 void Function::print(std::ostream& out) {
-    out << "Function " << this << "(" << *env << ")\n";
+    out << "Function " << this << " ";
+    env->printRef(out);
+    out << "\n";
     Code::print(out);
     for (auto p : promise) {
         if (p)

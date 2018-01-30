@@ -80,21 +80,27 @@ void Branch::printRhs(std::ostream& out) {
 void MkArg::printRhs(std::ostream& out) {
     out << name() << "(";
     arg<0>()->printRef(out);
-    out << ", " << *prom << ") " << *env();
+    out << ", " << *prom << ", ";
+    env()->printRef(out);
+    out << ") ";
 }
 
 void MkClsFun::printRhs(std::ostream& out) {
-    out << name() << "(" << *fun << ") " << *env();
+    out << name() << "(" << *fun << ", ";
+    env()->printRef(out);
+    out << ") ";
 }
 
 void LdVar::printRhs(std::ostream& out) {
-    out << name() << "(" << CHAR(PRINTNAME(varName)) << ")";
-    out << " " << *env();
+    out << name() << "(" << CHAR(PRINTNAME(varName)) << ", ";
+    env()->printRef(out);
+    out << ") ";
 }
 
 void LdFun::printRhs(std::ostream& out) {
-    out << name() << "(" << CHAR(PRINTNAME(varName)) << ")";
-    out << " " << *env();
+    out << name() << "(" << CHAR(PRINTNAME(varName)) << ", ";
+    env()->printRef(out);
+    out << ") ";
 }
 
 void LdArg::printRhs(std::ostream& out) {
@@ -104,19 +110,24 @@ void LdArg::printRhs(std::ostream& out) {
 void StVar::printRhs(std::ostream& out) {
     out << name() << "(" << CHAR(PRINTNAME(varName)) << ", ";
     val()->printRef(out);
-    out << ") " << *env();
+    out << ", ";
+    env()->printRef(out);
+    out << ") ";
 }
 
-void Call::printRhs(std::ostream& out) {
-    out << name() << " ";
-    this->arg(0)->printRef(out);
-    out << " (";
-    for (unsigned i = 1; i < nargs() - 1; ++i) {
-        this->arg(i)->printRef(out);
+void MkEnv::printRhs(std::ostream& out) {
+    out << name();
+    out << " (parent=";
+    arg(0)->printRef(out);
+    if (nargs() > 1)
         out << ", ";
+    for (unsigned i = 0; i < nargs() - 1; ++i) {
+        out << CHAR(PRINTNAME(this->varName[i])) << "=";
+        this->arg(i + 1)->printRef(out);
+        if (i != nargs() - 2)
+            out << ", ";
     }
-    this->arg(nargs() - 1)->printRef(out);
-    out << ") " << *env();
+    out << ") ";
 }
 
 void Phi::updateType() {

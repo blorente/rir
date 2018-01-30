@@ -9,7 +9,7 @@ namespace pir {
 class Query {
   public:
     static bool pure(Code* c);
-    static bool noEnv(Code* c);
+    static bool noUnknownEnvAccess(Code* c, Env* e);
     static Value* getReturn(Code* c);
 };
 }

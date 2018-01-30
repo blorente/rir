@@ -1,6 +1,8 @@
 #ifndef COMPILER_ENV_H
 #define COMPILER_ENV_H
 
+#include "value.h"
+
 #include <iostream>
 #include <vector>
 
@@ -9,16 +11,16 @@ namespace pir {
 
 class Instruction;
 
-class Env {
+class Env : public Value {
   public:
+    static size_t envIdCount;
+
+    size_t envId;
     Env* parent;
 
-    Env(Env* parent = nullptr) : parent(parent) {}
-
-    friend std::ostream& operator<<(std::ostream& out, const Env& e) {
-        out << "Env(" << (void*)&e << ")";
-        return out;
-    }
+    Env(Env* parent = nullptr)
+        : Value(RType::env, Kind::value), envId(envIdCount++), parent(parent) {}
+    void printRef(std::ostream& out) override;
 };
 }
 }

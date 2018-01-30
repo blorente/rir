@@ -21,6 +21,7 @@ class Value {
     virtual void printRef(std::ostream& out) = 0;
     typedef std::function<void(BB*)> bbMaybe;
     virtual void bb(bbMaybe){};
+    virtual ~Value(){};
 };
 
 template <typename T>
