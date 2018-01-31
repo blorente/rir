@@ -7,7 +7,7 @@ namespace pir {
 void Module::print(std::ostream& out) {
     for (auto f : function) {
         f->print(out);
-        out << "\n";
+        out << "\n-------------------------------\n";
     }
 }
 

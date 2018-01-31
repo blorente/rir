@@ -54,8 +54,12 @@ class CodeCompiler {
 
     void push(Value* v) { m.stack.push_back(v); }
     Value* top() { return m.stack.back(); }
-    Value* at(size_t n) { return m.stack[m.stack_size() - n - 1]; }
+    Value* at(size_t n) {
+        assert(n < m.stack_size());
+        return m.stack[m.stack_size() - n - 1];
+    }
     Value* pop() {
+        assert(m.stack_size() > 0);
         auto v = m.stack.back();
         m.stack.pop_back();
         return v;
@@ -108,6 +112,7 @@ class CodeCompiler {
             assert(empty());
             break;
         case Opcode::asbool_:
+        case Opcode::aslogical_:
             push(b(new AsLogical(pop())));
             break;
         case Opcode::ldfun_:
@@ -119,6 +124,18 @@ class CodeCompiler {
                              rir::Pool::get(bc.immediate.guard_fun_args.name)))
                       << "\n";
             break;
+        case Opcode::subassign2_:
+            x = pop();
+            y = pop();
+            v = pop();
+            push(b(new IndexWrite(x, y, v)));
+            break;
+        case Opcode::swap_:
+            x = pop();
+            y = pop();
+            push(x);
+            push(y);
+            break;
         case Opcode::dup_:
             push(top());
             break;
@@ -128,6 +145,11 @@ class CodeCompiler {
             push(x);
             push(y);
             break;
+        case Opcode::pull_: {
+            size_t i = bc.immediate.i;
+            push(at(i));
+            break;
+        }
         case Opcode::close_: {
             Value* x = pop();
             Value* y = pop();
@@ -193,21 +215,27 @@ class CodeCompiler {
             push(b(new CallBuiltin(b.env, getBuiltin(target), args)));
             break;
         }
-        case Opcode::test_bounds_:
-            x = at(1);
-            y = at(0);
-            push(b(new TestBounds(x, y)));
-            break;
 #define BINOP(Name, Op)                                                        \
     case Opcode::Op:                                                           \
         x = pop();                                                             \
         y = pop();                                                             \
         push(b(new Name(x, y)));                                               \
         break
+            BINOP(LOr, lgl_or_);
+            BINOP(LAnd, lgl_and_);
+            BINOP(Lt, lt_);
+            BINOP(Gt, gt_);
+            BINOP(Gte, le_);
+            BINOP(Lte, ge_);
             BINOP(Mod, mod_);
+            BINOP(Div, div_);
+            BINOP(Add, add_);
+            BINOP(Mul, mul_);
             BINOP(Colon, colon_);
             BINOP(Pow, pow_);
             BINOP(Sub, sub_);
+            BINOP(Eq, eq_);
+            BINOP(Neq, ne_);
             BINOP(IndexAccess, extract1_);
 #undef BINOP
 #define UNOP(Name, Op)                                                         \
@@ -216,6 +244,8 @@ class CodeCompiler {
         push(b(new Name(v)));                                                  \
         break
             UNOP(Inc, inc_);
+            UNOP(Not, not_);
+            UNOP(Length, length_);
 #undef UNOP
         default:
             std::cerr << "Cannot compile Function. Unsupported bc\n";
@@ -272,7 +302,9 @@ class CodeCompiler {
         for (size_t i = 0; i < m.stack_size(); ++i) {
             Phi* p = Phi::Cast(s.stack.at(i));
             assert(p);
-            p->push_arg(m.stack.at(i));
+            Value* incom = m.stack.at(i);
+            if (incom != p)
+                p->push_arg(incom);
         }
         return false;
     }
@@ -373,12 +405,19 @@ Value* CodeCompiler::operator()(bool addReturn) {
 
         if (bc.isJmp()) {
             auto trg = bc.jmpTarget(m.pc);
+            Opcode* fallpc = BC::next(m.pc);
             if (bc.isUncondJmp()) {
                 m.pc = trg;
                 continue;
             }
+
+            if (bc.bc == Opcode::brobj_) {
+                // TODO!!!!
+                m.pc = fallpc;
+                continue;
+            }
+
             // Conditional jump
-            Opcode* fallpc = BC::next(m.pc);
             Value* v = pop();
             b(new Branch(v));
 
@@ -481,8 +520,8 @@ void PirCompiler::compileFunction(SEXP f) {
     TheCompiler cmp;
     cmp(f);
 
-    std::cout << "------ Compiled\n";
-    cmp.m->print(std::cout);
+    //    std::cout << "------ Compiled\n";
+    //    cmp.m->print(std::cout);
 
     for (auto f : cmp.m->function) {
         ScopeResolution::apply(f);
@@ -491,24 +530,26 @@ void PirCompiler::compileFunction(SEXP f) {
         Cleanup::apply(f);
     }
 
-    std::cout << "------ Scope Resolution\n";
-    cmp.m->print(std::cout);
+    //    std::cout << "------ Scope Resolution\n";
+    //    cmp.m->print(std::cout);
+    for (size_t iter = 0; iter < 5; ++iter) {
 
-    for (auto f : cmp.m->function) {
-        Inline::apply(f);
+        for (auto f : cmp.m->function) {
+            Inline::apply(f);
+        }
+
+        //    std::cout << "------ Inlined\n";
+        //    cmp.m->print(std::cout);
+
+        for (auto f : cmp.m->function) {
+            ScopeResolution::apply(f);
+            Cleanup::apply(f);
+            ScopeResolution::apply(f);
+            Cleanup::apply(f);
+        }
     }
 
-    std::cout << "------ Inlined\n";
-    cmp.m->print(std::cout);
-
-    for (auto f : cmp.m->function) {
-        ScopeResolution::apply(f);
-        Cleanup::apply(f);
-        ScopeResolution::apply(f);
-        Cleanup::apply(f);
-    }
-
-    std::cout << "------ Scope Resolution\n";
+    //    std::cout << "------ Scope Resolution\n";
     cmp.m->print(std::cout);
 
     delete cmp.m;

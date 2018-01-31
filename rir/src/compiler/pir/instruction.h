@@ -11,9 +11,7 @@
 #include <functional>
 #include <iostream>
 
-#define COMPILER_INSTRUCTIONS(V) COMPILER_REAL_INSTRUCTIONS(V)
-
-#define COMPILER_REAL_INSTRUCTIONS(V)                                          \
+#define COMPILER_INSTRUCTIONS(V)                                               \
     V(LdFun)                                                                   \
     V(LdVar)                                                                   \
     V(LdConst)                                                                 \
@@ -32,13 +30,26 @@
     V(Call)                                                                    \
     V(CallBuiltin)                                                             \
     V(MkEnv)                                                                   \
+    V(Lte)                                                                     \
+    V(Gte)                                                                     \
+    V(LAnd)                                                                    \
+    V(LOr)                                                                     \
     V(Mod)                                                                     \
+    V(Add)                                                                     \
+    V(Div)                                                                     \
     V(Colon)                                                                   \
     V(Pow)                                                                     \
     V(Sub)                                                                     \
+    V(Mul)                                                                     \
     V(Inc)                                                                     \
-    V(TestBounds)                                                              \
+    V(Not)                                                                     \
+    V(Lt)                                                                      \
+    V(Gt)                                                                      \
+    V(Neq)                                                                     \
+    V(Eq)                                                                      \
+    V(Length)                                                                  \
     V(IndexAccess)                                                             \
+    V(IndexWrite)                                                              \
     V(Force)
 
 namespace rir {
@@ -329,7 +340,6 @@ class VarLenInstruction
 
     void push_arg(PirType t, Value* a) {
         assert(arg_.size() == arg_type.size());
-        assert(t >= a->type);
         arg_type.push_back(t);
         arg_.push_back(a);
         assert(arg_.size() > 1 || ENV == EnvAccess::None ||
@@ -491,6 +501,15 @@ class FLI(AsTest, 1, Effect::None, EnvAccess::None) {
         : FixedLenInstruction(NativeType::test, {{RType::logical}}, {{in}}) {}
 };
 
+class FLI(IndexWrite, 3, Effect::None, EnvAccess::None) {
+  public:
+    IndexWrite(Value* vec, Value* index, Value* value)
+        : FixedLenInstruction(
+              PirType::val(),
+              {{PirType::val(), PirType::val(), PirType::val()}},
+              {{vec, index, value}}) {}
+};
+
 #define SAFE_BINOP(Name, Type)                                                 \
     class FLI(Name, 2, Effect::None, EnvAccess::None) {                        \
       public:                                                                  \
@@ -499,12 +518,22 @@ class FLI(AsTest, 1, Effect::None, EnvAccess::None) {
                                   {{a, b}}) {}                                 \
     }
 
+SAFE_BINOP(Gte, PirType::val());
+SAFE_BINOP(Lte, PirType::val());
+SAFE_BINOP(Mul, PirType::val());
+SAFE_BINOP(Div, PirType::val());
 SAFE_BINOP(Mod, PirType::val());
+SAFE_BINOP(Add, PirType::val());
 SAFE_BINOP(Colon, PirType::val());
 SAFE_BINOP(Pow, PirType::val());
 SAFE_BINOP(Sub, PirType::val());
-SAFE_BINOP(TestBounds, NativeType::test);
 SAFE_BINOP(IndexAccess, PirType::val());
+SAFE_BINOP(Gt, RType::logical);
+SAFE_BINOP(Lt, RType::logical);
+SAFE_BINOP(Neq, RType::logical);
+SAFE_BINOP(Eq, RType::logical);
+SAFE_BINOP(LAnd, RType::logical);
+SAFE_BINOP(LOr, RType::logical);
 
 #undef SAFE_BINOP
 
@@ -517,6 +546,8 @@ SAFE_BINOP(IndexAccess, PirType::val());
     }
 
 SAFE_UNOP(Inc);
+SAFE_UNOP(Not);
+SAFE_UNOP(Length);
 
 #undef SAFE_UNOP
 #undef FLI
@@ -551,7 +582,7 @@ class VLI(Call, Effect::Any, EnvAccess::Leak) {
 
 typedef SEXP (*CCODE)(SEXP, SEXP, SEXP, SEXP);
 
-class VLI(CallBuiltin, Effect::Any, EnvAccess::Leak) {
+class VLI(CallBuiltin, Effect::Any, EnvAccess::Write) {
   public:
     const CCODE builtin;
     Value** callArgs() { return &args()[1]; }
