@@ -30,12 +30,12 @@ void Verifier::operator()() {
 }
 
 bool Verifier::verify(BB* bb) {
-    for (auto i : bb->instr)
+    for (auto i : *bb)
         if (!verify(i, bb)) {
             assert(false);
             return false;
         }
-    if (bb->instr.empty()) {
+    if (bb->empty()) {
         if (!bb->next0 && !bb->next1) {
             assert(false);
             return false;

@@ -36,7 +36,7 @@ bool Instruction::unused() {
 
     return Visitor::check(bb(), [&](BB* bb) {
         bool unused = true;
-        for (auto i : bb->instr) {
+        for (auto i : *bb) {
             i->each_arg(
                 [&](Value* v, PirType t) { unused = unused && (v != this); });
             if (!unused)
@@ -48,7 +48,7 @@ bool Instruction::unused() {
 
 void Instruction::replaceUsesWith(Value* replace) {
     Visitor::run(bb(), [&](BB* bb) {
-        for (auto i : bb->instr) {
+        for (auto i : *bb) {
             i->map_arg([&](Value* v, PirType t) {
                 if (v == this)
                     return replace;

@@ -17,32 +17,34 @@ class TheCleanup {
         std::set<size_t> used_p;
 
         Visitor::run(function->entry, [&](BB* bb) {
-            for (auto it = bb->instr.begin(); it != bb->instr.end(); it++) {
-                Instruction* i = *it;
+            auto ip = bb->begin();
+            while (ip != bb->end()) {
+                Instruction* i = *ip;
+                auto next = ip + 1;
                 Force* force = Force::Cast(i);
                 ChkMissing* missing = ChkMissing::Cast(i);
                 ChkClosure* closure = ChkClosure::Cast(i);
                 Phi* phi = Phi::Cast(i);
                 MkArg* arg = MkArg::Cast(i);
                 if (!i->mightIO() && !i->changesEnv() && i->unused()) {
-                    it = bb->remove(it);
+                    next = bb->remove(ip);
                 } else if (force) {
                     Value* arg = force->arg<0>();
                     if (PirType::valOrMissing() >= arg->type) {
                         force->replaceUsesWith(arg);
-                        it = bb->remove(it);
+                        next = bb->remove(ip);
                     }
                 } else if (missing) {
                     Value* arg = missing->arg<0>();
                     if (PirType::val() >= arg->type) {
                         missing->replaceUsesWith(arg);
-                        it = bb->remove(it);
+                        next = bb->remove(ip);
                     }
                 } else if (closure) {
                     Value* arg = closure->arg<0>();
                     if (PirType::val() >= arg->type) {
                         closure->replaceUsesWith(arg);
-                        it = bb->remove(it);
+                        next = bb->remove(ip);
                     }
                 } else if (phi) {
                     std::set<Value*> phin;
@@ -52,24 +54,23 @@ class TheCleanup {
                         for (auto v : phin)
                             newphi->push_arg(v);
                         phi->replaceUsesWith(newphi);
-                        bb->replace(it, newphi);
+                        bb->replace(ip, newphi);
                         phi = newphi;
                     }
                     phi->updateType();
                     if (phin.size() == 1) {
                         phi->replaceUsesWith(*phin.begin());
-                        it = bb->remove(it);
+                        next = bb->remove(ip);
                     }
                 } else if (arg) {
                     used_p.insert(arg->prom->id);
                 }
-                if (it == bb->instr.end())
-                    break;
+                ip = next;
             }
         });
 
         for (size_t i = 0; i < function->promise.size(); ++i) {
-            if (used_p.find(i) == used_p.end()) {
+            if (function->promise[i] && used_p.find(i) == used_p.end()) {
                 delete function->promise[i];
                 function->promise[i] = nullptr;
             }
@@ -82,8 +83,8 @@ class TheCleanup {
             // Remove unnecessary splits
             if (bb->jmp() && cfg.preds(bb->next0).size() == 1) {
                 BB* d = bb->next0;
-                while (d->instr.size() > 0) {
-                    d->moveTo(d->instr.begin(), bb);
+                while (!d->empty()) {
+                    d->moveTo(d->begin(), bb);
                 }
                 bb->next0 = d->next0;
                 bb->next1 = d->next1;
@@ -92,7 +93,7 @@ class TheCleanup {
                 toDel[d] = nullptr;
             } else
                 // Remove empty jump-through blocks
-                if (bb->jmp() && bb->next0->instr.empty() && bb->next0->jmp() &&
+                if (bb->jmp() && bb->next0->empty() && bb->next0->jmp() &&
                     cfg.preds(bb->next0->next0).size() == 1) {
                 toDel[bb->next0] = bb->next0->next0;
             } else
@@ -104,7 +105,7 @@ class TheCleanup {
                     toDel[bb->next0] = bb->next0->next0;
                     toDel[bb->next1] = bb->next0->next0;
                     bb->next1 = nullptr;
-                    bb->remove(bb->instr.end() - 1);
+                    bb->remove(bb->end() - 1);
                 }
             }
         });
@@ -116,8 +117,8 @@ class TheCleanup {
             cfg.preds(function->entry->next0).size() == 1) {
             BB* bb = function->entry;
             BB* d = bb->next0;
-            while (d->instr.size() > 0) {
-                d->moveTo(d->instr.begin(), bb);
+            while (!d->empty()) {
+                d->moveTo(d->begin(), bb);
             }
             bb->next0 = d->next0;
             bb->next1 = d->next1;

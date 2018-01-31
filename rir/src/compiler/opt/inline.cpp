@@ -87,7 +87,9 @@ class TheInliner {
     void operator()() {
 
         Visitor::run(function->entry, [&](BB* bb) {
-            for (auto it = bb->instr.begin(); it != bb->instr.end(); it++) {
+            // Dangerous iterater usage, works since we do only update it in
+            // one place.
+            for (auto it = bb->begin(); it != bb->end(); it++) {
                 Call* call = Call::Cast(*it);
                 if (!call)
                     continue;
@@ -101,7 +103,7 @@ class TheInliner {
 
                 BB* split = BBTransform::split(++function->max_bb_id, bb, it);
 
-                Call* newCall = Call::Cast(*split->instr.begin());
+                Call* newCall = Call::Cast(*split->begin());
                 std::vector<MkArg*> arguments;
                 for (size_t i = 0; i < newCall->nCallArgs(); ++i) {
                     MkArg* a = MkArg::Cast(newCall->callArgs()[i]);
@@ -118,8 +120,7 @@ class TheInliner {
 
                 std::unordered_map<Instruction*, Value*> promiseResult;
                 Visitor::run(copy, [&](BB* bb) {
-                    for (auto it = bb->instr.begin(); it != bb->instr.end();
-                         it++) {
+                    for (auto it = bb->begin(); it != bb->end(); it++) {
                         Instruction* i = *it;
                         LdArg* ld = LdArg::Cast(*it);
                         if (!ld)
@@ -141,21 +142,20 @@ class TheInliner {
                             Value* promRes =
                                 BBTransform::forInline(prom_copy, split);
                             promiseResult[i] = promRes;
-                            it = split->instr.begin();
+                            it = split->begin();
                             ld = LdArg::Cast(*it);
                             assert(ld);
                             ld->replaceUsesWith(promRes);
                             it = split->remove(it);
                             bb = split;
                         }
-                        if (it == bb->instr.end())
+                        if (it == bb->end())
                             return;
                     }
                 });
 
                 Visitor::run(copy, [&](BB* bb) {
-                    for (auto it = bb->instr.begin(); it != bb->instr.end();
-                         it++) {
+                    for (auto it = bb->begin(); it != bb->end(); it++) {
                         LdArg* ld = LdArg::Cast(*it);
                         if (!ld)
                             continue;
@@ -168,7 +168,7 @@ class TheInliner {
                         else
                             ld->replaceUsesWith(a);
                         it = bb->remove(it);
-                        if (it == bb->instr.end())
+                        if (it == bb->end())
                             return;
                     }
                 });
@@ -178,14 +178,14 @@ class TheInliner {
                 if (needCalleeEnv) {
                     MkEnv* env = new MkEnv(cls->env(), fun->arg_name,
                                            newCall->callArgs());
-                    copy->insert(copy->instr.begin(), env);
+                    copy->insert(copy->begin(), env);
                     Replace::usesOfValue(copy, fun->env, env);
                 }
                 // Remove the call instruction
-                split->remove(split->instr.begin());
+                split->remove(split->begin());
 
                 bb = split;
-                it = split->instr.begin();
+                it = split->begin();
             }
         });
     }

@@ -56,6 +56,12 @@ class BB {
 
     void print(std::ostream& = std::cout);
 
+    Instrs::iterator begin() { return instr.begin(); }
+    Instrs::iterator end() { return instr.end(); }
+    size_t size() { return instr.size(); }
+    Instruction* at(size_t i) { return instr[i]; }
+
+  private:
     Instrs instr;
 };
 

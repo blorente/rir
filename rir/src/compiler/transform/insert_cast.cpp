@@ -26,23 +26,27 @@ void InsertCast::operator()() {
 }
 
 void InsertCast::apply(BB* bb) {
-    for (auto i = bb->instr.begin(); i != bb->instr.end(); ++i) {
-        auto instr = *i;
+    auto ip = bb->begin();
+    while (ip != bb->end()) {
+        Instruction* instr = *ip;
+        auto next = ip + 1;
+
         Phi* p = nullptr;
         if ((p = Phi::Cast(instr))) {
             p->updateType();
         }
-        instr->map_arg([&i, bb](Value* v, PirType t) -> Value* {
+        instr->map_arg([&](Value* v, PirType t) -> Value* {
             size_t added = 0;
             while (!(t >= v->type)) {
                 auto c = cast(v, t);
                 c->bb_ = bb;
                 v = c;
-                i = bb->instr.insert((i + added), c);
+                next = bb->insert((ip + added), c);
                 added++;
             }
             return v;
         });
+        ip = next;
     }
 }
 }

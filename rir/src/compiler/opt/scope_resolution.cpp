@@ -117,6 +117,7 @@ class ScopeAnalysis : public StaticAnalysisForEnvironments<AbstractValue> {
     void apply(A& envs, Instruction* i) override {
         StVar* s = StVar::Cast(i);
         LdVar* ld = LdVar::Cast(i);
+        LdArg* lda = LdArg::Cast(i);
         LdFun* ldf = LdFun::Cast(i);
         Force* force = Force::Cast(i);
         MkEnv* mk = MkEnv::Cast(i);
@@ -125,6 +126,9 @@ class ScopeAnalysis : public StaticAnalysisForEnvironments<AbstractValue> {
             loads[ld] = envs.get(ld->env(), ld->varName);
         } else if (ldf) {
             loads[ldf] = envs.get(ldf->env(), ldf->varName);
+        } else if (lda) {
+            SEXP name = args[lda->id];
+            loads[lda] = envs.get(lda->env(), name);
         } else if (s) {
             envs[s->env()].set(s->varName, s->val());
             return;
@@ -136,9 +140,14 @@ class ScopeAnalysis : public StaticAnalysisForEnvironments<AbstractValue> {
         } else if (force) {
             Value* v = force->arg<0>();
             ld = LdVar::Cast(v);
+            lda = LdArg::Cast(v);
             if (ld) {
                 if (!envs[ld->env()].get(ld->varName).isUnknown())
                     envs[ld->env()].set(ld->varName, force);
+            } else if (lda) {
+                SEXP name = args[lda->id];
+                if (!envs[lda->env()].get(name).isUnknown())
+                    envs[lda->env()].set(name, force);
             }
         }
 
@@ -166,17 +175,19 @@ class TheScopeResolution {
         }
 
         Visitor::run(function->entry, [&](BB* bb) {
-            for (auto it = bb->instr.begin(); it != bb->instr.end(); it++) {
-                Instruction* i = *it;
-                LdVar* lda = LdVar::Cast(i);
+            auto ip = bb->begin();
+            while (ip != bb->end()) {
+                Instruction* i = *ip;
+                auto next = ip + 1;
+                LdArg* lda = LdArg::Cast(i);
                 LdFun* ldf = LdFun::Cast(i);
-                Instruction* ld = nullptr;
+                Instruction* ld = LdVar::Cast(i);
                 if (lda)
                     ld = lda;
                 else if (ldf)
                     ld = ldf;
                 if (!needEnv && StVar::Cast(i)) {
-                    it = bb->remove(it);
+                    next = bb->remove(ip);
                 } else if (ld) {
                     auto aload = analysis.loads[ld];
                     auto env = aload.first;
@@ -185,11 +196,11 @@ class TheScopeResolution {
                         Value* val = *v.vals.begin();
                         ld->replaceUsesWith(val);
                         if (!ld->changesEnv() || !val->type.maybeLazy())
-                            it = bb->remove(it);
+                            next = bb->remove(ip);
                     } else if (v.singleArg()) {
                         auto lda = new LdArg(*v.args.begin(), env);
                         ld->replaceUsesWith(lda);
-                        bb->replace(it, lda);
+                        bb->replace(ip, lda);
                     } else if (!v.vals.empty() && v.args.empty()) {
                         // TODO: mixing args and vals, but placing the LdArgs is
                         // hard...
@@ -200,15 +211,14 @@ class TheScopeResolution {
                         phi->updateType();
                         ld->replaceUsesWith(phi);
                         if (needEnv) {
-                            it++;
-                            it = bb->insert(it, phi);
+                            ip++;
+                            next = bb->insert(ip, phi);
                         } else {
-                            bb->replace(it, phi);
+                            bb->replace(ip, phi);
                         }
                     }
                 }
-                if (it == bb->instr.end())
-                    return;
+                ip = next;
             }
         });
     }

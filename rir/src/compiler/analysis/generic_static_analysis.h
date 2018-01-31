@@ -116,7 +116,7 @@ class StaticAnalysis {
                     mergepoint.resize(max_id + 1);
 
                 AbstractState state = mergepoint[bb->id];
-                for (auto i : bb->instr) {
+                for (auto i : *bb) {
                     apply(state, i);
                 }
 

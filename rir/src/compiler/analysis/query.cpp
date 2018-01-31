@@ -7,7 +7,7 @@ namespace pir {
 
 bool Query::pure(Code* c) {
     return Visitor::check(c->entry, [](BB* bb) {
-        for (auto i : bb->instr)
+        for (auto i : *bb)
             if (i->mightIO() || i->changesEnv())
                 return false;
         return true;
@@ -15,7 +15,7 @@ bool Query::pure(Code* c) {
 }
 bool Query::noUnknownEnvAccess(Code* c, Env* e) {
     return Visitor::check(c->entry, [&](BB* bb) {
-        for (auto i : bb->instr) {
+        for (auto i : *bb) {
             LdArg* ld = LdArg::Cast(i);
             if (ld && ld->env() == e) {
             } else if (i->needsEnv()) {

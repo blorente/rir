@@ -30,10 +30,7 @@ void BB::append(Instruction* i) {
 
 BB::Instrs::iterator BB::remove(Instrs::iterator it) {
     delete *it;
-    auto itup = instr.erase(it);
-    if (itup != instr.begin())
-        itup--;
-    return itup;
+    return instr.erase(it);
 }
 
 BB::Instrs::iterator BB::moveTo(Instrs::iterator it, BB* other) {

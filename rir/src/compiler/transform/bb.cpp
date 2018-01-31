@@ -17,8 +17,8 @@ BB* BBTransform::clone(size_t* id_counter, BB* src) {
         if (bb->id >= bbs.size())
             bbs.resize(bb->id + 5);
         bbs[bb->id] = theClone;
-        for (size_t i = 0; i < bb->instr.size(); ++i)
-            relocation_table[bb->instr[i]] = theClone->instr[i];
+        for (size_t i = 0; i < bb->size(); ++i)
+            relocation_table[bb->at(i)] = theClone->at(i);
     });
 
     // Fixup CFG
@@ -32,7 +32,7 @@ BB* BBTransform::clone(size_t* id_counter, BB* src) {
     // Relocate arg pointers
     BB* newEntry = bbs[src->id];
     Visitor::run(newEntry, [&](BB* bb) {
-        for (auto i : bb->instr)
+        for (auto i : *bb)
             i->map_arg([&](Value* v, PirType) {
                 if (v->kind == Kind::instruction)
                     return relocation_table[v];
@@ -50,7 +50,7 @@ BB* BBTransform::split(size_t next_id, BB* src, BB::Instrs::iterator it) {
     BB* split = new BB(next_id);
     split->next0 = src->next0;
     split->next1 = src->next1;
-    while (it != src->instr.end()) {
+    while (it != src->end()) {
         it = src->moveTo(it, split);
     }
     src->next0 = split;
@@ -65,12 +65,12 @@ Value* BBTransform::forInline(BB* inlinee, BB* splice) {
             return;
 
         assert(bb->next1 == nullptr);
-        Return* ret = Return::Cast(bb->instr.back());
+        Return* ret = Return::Cast(bb->last());
         assert(ret);
         assert(!found);
         found = ret->arg<0>();
         bb->next0 = splice;
-        bb->remove(bb->instr.end() - 1);
+        bb->remove(bb->end() - 1);
     });
     assert(found);
     return found;
