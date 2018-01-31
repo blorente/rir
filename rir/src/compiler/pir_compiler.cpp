@@ -1,4 +1,5 @@
 #include "pir_compiler.h"
+#include "R/Funtab.h"
 #include "R/RList.h"
 #include "analysis/query.h"
 #include "analysis/verifier.h"
@@ -53,6 +54,7 @@ class CodeCompiler {
 
     void push(Value* v) { m.stack.push_back(v); }
     Value* top() { return m.stack.back(); }
+    Value* at(size_t n) { return m.stack[m.stack_size() - n - 1]; }
     Value* pop() {
         auto v = m.stack.back();
         m.stack.pop_back();
@@ -87,6 +89,8 @@ class CodeCompiler {
 
     void run(BC bc) {
         Value* v;
+        Value* x;
+        Value* y;
         switch (bc.bc) {
         case Opcode::push_:
             push(b(new LdConst(bc.immediateConst())));
@@ -117,6 +121,12 @@ class CodeCompiler {
             break;
         case Opcode::dup_:
             push(top());
+            break;
+        case Opcode::dup2_:
+            x = at(0);
+            y = at(1);
+            push(x);
+            push(y);
             break;
         case Opcode::close_: {
             Value* x = pop();
@@ -169,6 +179,44 @@ class CodeCompiler {
             push(b(new Call(b.env, pop(), args)));
             break;
         }
+        case Opcode::static_call_stack_: {
+            unsigned n = bc.immediate.call_args.nargs;
+            rir::CallSite* cs = bc.callSite(srcCode);
+            SEXP target = rir::Pool::get(*cs->target());
+
+            std::vector<Value*> args(n);
+            for (size_t i = 0; i < n; ++i)
+                args[n - i - 1] = pop();
+
+            assert(TYPEOF(target) == BUILTINSXP);
+
+            push(b(new CallBuiltin(b.env, getBuiltin(target), args)));
+            break;
+        }
+        case Opcode::test_bounds_:
+            x = at(1);
+            y = at(0);
+            push(b(new TestBounds(x, y)));
+            break;
+#define BINOP(Name, Op)                                                        \
+    case Opcode::Op:                                                           \
+        x = pop();                                                             \
+        y = pop();                                                             \
+        push(b(new Name(x, y)));                                               \
+        break
+            BINOP(Mod, mod_);
+            BINOP(Colon, colon_);
+            BINOP(Pow, pow_);
+            BINOP(Sub, sub_);
+            BINOP(IndexAccess, extract1_);
+#undef BINOP
+#define UNOP(Name, Op)                                                         \
+    case Opcode::Op:                                                           \
+        v = pop();                                                             \
+        push(b(new Name(v)));                                                  \
+        break
+            UNOP(Inc, inc_);
+#undef UNOP
         default:
             std::cerr << "Cannot compile Function. Unsupported bc\n";
             bc.print();
@@ -211,7 +259,7 @@ class CodeCompiler {
             s.entry = b.createBB();
             s.pc = trg;
             for (size_t i = 0; i < m.stack_size(); ++i) {
-                auto v = pop();
+                auto v = m.stack.at(i);
                 auto p = new Phi;
                 s.entry->append(p);
                 p->push_arg(v);
@@ -345,6 +393,7 @@ Value* CodeCompiler::operator()(bool addReturn) {
             case Opcode::brfalse_:
                 b.bb->next0 = branch;
                 b.bb->next1 = fall;
+                break;
             default:
                 assert(false);
             }

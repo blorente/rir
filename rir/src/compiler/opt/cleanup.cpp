@@ -99,7 +99,6 @@ class TheCleanup {
             } else
                 // Remvove empty branches
                 if (bb->next0 && bb->next1) {
-                assert(bb->next0->jmp() && bb->next1->jmp());
                 if (bb->next0->empty() && bb->next1->empty() &&
                     bb->next0->next0 == bb->next1->next0) {
                     toDel[bb->next0] = bb->next0->next0;

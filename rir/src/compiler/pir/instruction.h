@@ -30,7 +30,15 @@
     V(ChkMissing)                                                              \
     V(ChkClosure)                                                              \
     V(Call)                                                                    \
+    V(CallBuiltin)                                                             \
     V(MkEnv)                                                                   \
+    V(Mod)                                                                     \
+    V(Colon)                                                                   \
+    V(Pow)                                                                     \
+    V(Sub)                                                                     \
+    V(Inc)                                                                     \
+    V(TestBounds)                                                              \
+    V(IndexAccess)                                                             \
     V(Force)
 
 namespace rir {
@@ -483,6 +491,36 @@ class FLI(AsTest, 1, Effect::None, EnvAccess::None) {
         : FixedLenInstruction(NativeType::test, {{RType::logical}}, {{in}}) {}
 };
 
+#define SAFE_BINOP(Name, Type)                                                 \
+    class FLI(Name, 2, Effect::None, EnvAccess::None) {                        \
+      public:                                                                  \
+        Name(Value* a, Value* b)                                               \
+            : FixedLenInstruction(Type, {{PirType::val(), PirType::val()}},    \
+                                  {{a, b}}) {}                                 \
+    }
+
+SAFE_BINOP(Mod, PirType::val());
+SAFE_BINOP(Colon, PirType::val());
+SAFE_BINOP(Pow, PirType::val());
+SAFE_BINOP(Sub, PirType::val());
+SAFE_BINOP(TestBounds, NativeType::test);
+SAFE_BINOP(IndexAccess, PirType::val());
+
+#undef SAFE_BINOP
+
+#define SAFE_UNOP(Name)                                                        \
+    class FLI(Name, 1, Effect::None, EnvAccess::None) {                        \
+      public:                                                                  \
+        Name(Value* v)                                                         \
+            : FixedLenInstruction(PirType::val(), {{PirType::val()}}, {{v}}) { \
+        }                                                                      \
+    }
+
+SAFE_UNOP(Inc);
+
+#undef SAFE_UNOP
+#undef FLI
+
 #define VLI(type, io, env)                                                     \
     type:                                                                      \
   public                                                                       \
@@ -500,6 +538,30 @@ class VLI(Call, Effect::Any, EnvAccess::Leak) {
         this->push_arg(RType::closure, fun);
         for (unsigned i = 0; i < args.size(); ++i)
             this->push_arg(RType::prom, args[i]);
+    }
+
+    void eachCallArg(arg_iterator it) {
+        for (size_t i = 0; i < nCallArgs(); ++i) {
+            Value* v = callArgs()[i];
+            PirType t = callTypes()[i];
+            it(v, t);
+        }
+    }
+};
+
+typedef SEXP (*CCODE)(SEXP, SEXP, SEXP, SEXP);
+
+class VLI(CallBuiltin, Effect::Any, EnvAccess::Leak) {
+  public:
+    const CCODE builtin;
+    Value** callArgs() { return &args()[1]; }
+    const PirType* callTypes() { return &types()[1]; }
+    size_t nCallArgs() { return nargs() - 1; }
+
+    CallBuiltin(Value* e, CCODE builtin, const std::vector<Value*>& args)
+        : VarLenInstruction(PirType::valOrLazy(), e), builtin(builtin) {
+        for (unsigned i = 0; i < args.size(); ++i)
+            this->push_arg(PirType::val(), args[i]);
     }
 
     void eachCallArg(arg_iterator it) {
@@ -536,6 +598,8 @@ class VLI(Phi, Effect::None, EnvAccess::None) {
     Phi() : VarLenInstruction(PirType::any()) {}
     void updateType();
 };
+
+#undef VLI
 }
 }
 
