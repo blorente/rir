@@ -1,11 +1,19 @@
 #include "visitor.h"
 #include "../pir/pir_impl.h"
 
+#include <deque>
+
 namespace {
 using namespace rir::pir;
 
+enum class Traversal {
+    DepthFirst,
+    BreadthFirst,
+};
+
+template <Traversal TRAVERSAL>
 struct BBVisitor {
-    std::set<BB*> todo;
+    std::deque<BB*> todo;
     std::set<BB*> done;
     BB* cur;
     Visitor::BBReturnAction action;
@@ -20,27 +28,36 @@ struct BBVisitor {
     bool operator()(BB* start) {
         assert(todo.empty());
         cur = start;
+        done.insert(cur);
 
         while (cur) {
-            done.insert(cur);
-
             BB* next = nullptr;
 
-            if (cur->next0 && done.find(cur->next0) == done.end())
-                next = cur->next0;
+            if (cur->next0 && done.find(cur->next0) == done.end()) {
+                if (TRAVERSAL == Traversal::DepthFirst || todo.empty())
+                    next = cur->next0;
+                else
+                    todo.push_front(cur->next0);
+                done.insert(cur->next0);
+            }
 
             if (cur->next1 && done.find(cur->next1) == done.end()) {
-                if (!next)
+                if (!next &&
+                    (TRAVERSAL == Traversal::DepthFirst || todo.empty())) {
                     next = cur->next1;
-                else
-                    todo.insert(cur->next1);
+                } else {
+                    if (TRAVERSAL == Traversal::DepthFirst)
+                        todo.push_back(cur->next1);
+                    else
+                        todo.push_front(cur->next1);
+                }
+                done.insert(cur->next1);
             }
 
             if (!next) {
-                auto c = todo.begin();
-                if (c != todo.end()) {
-                    next = *c;
-                    todo.erase(c);
+                if (!todo.empty()) {
+                    next = todo.back();
+                    todo.pop_back();
                 }
             }
 
@@ -60,15 +77,16 @@ namespace rir {
 namespace pir {
 
 bool Visitor::check(BB* bb, BBReturnAction action) {
-    BBVisitor v(action);
+    BBVisitor<Traversal::DepthFirst> v(action);
     return v(bb);
 }
 
 void Visitor::run(BB* bb, BBAction action) {
-    check(bb, [&](BB* bb) -> bool {
+    BBVisitor<Traversal::BreadthFirst> v([&](BB* bb) {
         action(bb);
         return true;
     });
+    v(bb);
 }
 }
 }

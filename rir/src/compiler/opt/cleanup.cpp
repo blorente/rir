@@ -76,17 +76,28 @@ class TheCleanup {
         }
 
         CFG cfg(function->entry);
-
         std::unordered_map<BB*, BB*> toDel;
 
         Visitor::run(function->entry, [&](BB* bb) {
-            // Remove empty jump-through blocks
-            if (bb->jmp() && bb->next0->instr.empty() && bb->next0->jmp() &&
-                cfg.preds(bb->next0->next0).size() == 1) {
+            // Remove unnecessary splits
+            if (bb->jmp() && cfg.preds(bb->next0).size() == 1) {
+                BB* d = bb->next0;
+                while (d->instr.size() > 0) {
+                    d->moveTo(d->instr.begin(), bb);
+                }
+                bb->next0 = d->next0;
+                bb->next1 = d->next1;
+                d->next0 = nullptr;
+                d->next1 = nullptr;
+                toDel[d] = nullptr;
+            } else
+                // Remove empty jump-through blocks
+                if (bb->jmp() && bb->next0->instr.empty() && bb->next0->jmp() &&
+                    cfg.preds(bb->next0->next0).size() == 1) {
                 toDel[bb->next0] = bb->next0->next0;
-            }
-            // Remvove empty branches
-            if (bb->next0 && bb->next1) {
+            } else
+                // Remvove empty branches
+                if (bb->next0 && bb->next1) {
                 assert(bb->next0->jmp() && bb->next1->jmp());
                 if (bb->next0->empty() && bb->next1->empty() &&
                     bb->next0->next0 == bb->next1->next0) {
@@ -100,6 +111,19 @@ class TheCleanup {
         if (function->entry->jmp() && function->entry->empty()) {
             toDel[function->entry] = function->entry->next0;
             function->entry = function->entry->next0;
+        }
+        if (function->entry->jmp() &&
+            cfg.preds(function->entry->next0).size() == 1) {
+            BB* bb = function->entry;
+            BB* d = bb->next0;
+            while (d->instr.size() > 0) {
+                d->moveTo(d->instr.begin(), bb);
+            }
+            bb->next0 = d->next0;
+            bb->next1 = d->next1;
+            d->next0 = nullptr;
+            d->next1 = nullptr;
+            toDel[d] = nullptr;
         }
         Visitor::run(function->entry, [&](BB* bb) {
             while (toDel.count(bb->next0))
@@ -126,6 +150,7 @@ namespace pir {
 
 void Cleanup::apply(Function* function) {
     TheCleanup s(function);
+    s();
     s();
 }
 }
