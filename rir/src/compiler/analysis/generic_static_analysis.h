@@ -15,10 +15,13 @@ namespace pir {
 
 static Value* UnknownParent = (Value*)-1;
 static Value* UninitializedParent = nullptr;
+static Function* UnknownFunction = (Function*)-1;
 
 template <class AbstractValue>
 struct AbstractEnvironment {
+
     std::unordered_map<SEXP, AbstractValue> entries;
+    std::unordered_map<Value*, Function*> functionPointers;
 
     Value* parentEnv = UninitializedParent;
 
@@ -59,6 +62,7 @@ struct AbstractEnvironment {
             changed = leaked = true;
         if (!tainted && other.tainted)
             changed = tainted = true;
+
         std::set<SEXP> keys;
         for (auto e : entries)
             keys.insert(std::get<0>(e));
@@ -68,13 +72,22 @@ struct AbstractEnvironment {
             if (entries[n].merge(other.get(n)))
                 changed = true;
         }
+
+        std::set<Value*> fps;
+        for (auto e : functionPointers)
+            fps.insert(std::get<0>(e));
+        for (auto e : other.functionPointers)
+            fps.insert(std::get<0>(e));
+        for (auto n : fps) {
+            if (functionPointers[n] != UnknownFunction &&
+                functionPointers[n] != other.functionPointers[n]) {
+                functionPointers[n] = UnknownFunction;
+            }
+        }
+
         if (parentEnv == UninitializedParent &&
             other.parentEnv != UninitializedParent) {
             parentEnv = other.parentEnv;
-            changed = true;
-        }
-        if (parentEnv != other.parentEnv) {
-            parentEnv = UnknownParent;
             changed = true;
         }
         return changed;
@@ -92,6 +105,7 @@ class StaticAnalysis {
     StaticAnalysis(BB* entry) : entry(entry) {}
     StaticAnalysis(BB* entry, const AbstractState& initialState)
         : entry(entry) {
+        mergepoint.resize(entry->id + 1);
         mergepoint[entry->id] = initialState;
     }
 
@@ -162,9 +176,20 @@ class AbstractEnvironmentSet
             e.second.clear();
     }
 
-    AbstractLoadVal get(Value* env, SEXP e) {
+    Function* findFunction(Value* env, Value* fun) {
         while (env != UnknownParent) {
             assert(env);
+            if ((*this)[env].functionPointers.count(fun))
+                return (*this)[env].functionPointers.at(fun);
+            env = (*this)[env].parentEnv;
+        }
+        return UnknownFunction;
+    }
+
+    AbstractLoadVal get(Value* env, SEXP e) {
+        while (env != UnknownParent) {
+            if (this->count(env) == 0)
+                return AbstractLoadVal(env, AbstractValue::tainted());
             const AbstractValue& res = (*this)[env].get(e);
             if (!res.isUnknown())
                 return AbstractLoadVal(env, res);
@@ -189,6 +214,12 @@ class StaticAnalysisForEnvironments
     StaticAnalysisForEnvironments(Value* localScope,
                                   const std::vector<SEXP>& args, BB* bb)
         : StaticAnalysis<A>(bb), args(args), localScope(localScope) {}
+
+    StaticAnalysisForEnvironments(Value* localScope,
+                                  const std::vector<SEXP>& args, BB* bb,
+                                  const A& initialState)
+        : StaticAnalysis<A>(bb, initialState), args(args),
+          localScope(localScope) {}
 
     void init(A& initial) override {
         E& env = initial[localScope];

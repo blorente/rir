@@ -13,12 +13,15 @@ bool Query::pure(Code* c) {
         return true;
     });
 }
-bool Query::noUnknownEnvAccess(Code* c, Env* e) {
+
+bool Query::doesNotNeedEnv(Code* c) {
     return Visitor::check(c->entry, [&](BB* bb) {
         for (auto i : *bb) {
-            LdArg* ld = LdArg::Cast(i);
-            if (ld && ld->env() == e) {
-            } else if (i->needsEnv()) {
+            LdVar* ld = LdVar::Cast(i);
+            LdFun* ldf = LdFun::Cast(i);
+            if (ld && ldf) {
+                return false;
+            } else if (i->leaksEnv()) {
                 return false;
             }
         }

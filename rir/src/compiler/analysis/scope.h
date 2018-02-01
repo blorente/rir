@@ -14,7 +14,6 @@ namespace pir {
 
 class ScopeAnalysis {
     typedef StaticAnalysisForEnvironments<AbstractValue> Instance;
-
   public:
     std::unordered_map<Instruction*, Instance::AbstractLoadVal> loads;
     Instance::A finalState;

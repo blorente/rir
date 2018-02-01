@@ -98,9 +98,11 @@ class TheCleanup {
             if (bb->jmp() && bb->next0->empty() && bb->next0->jmp() &&
                 cfg.preds(bb->next0->next0).size() == 1) {
                 toDel[bb->next0] = bb->next0->next0;
-            } else
-                // Remvove empty branches
-                if (bb->next0 && bb->next1) {
+            }
+        });
+        Visitor::run(function->entry, [&](BB* bb) {
+            // Remvove empty branches
+            if (bb->next0 && bb->next1) {
                 if (bb->next0->empty() && bb->next1->empty() &&
                     bb->next0->next0 == bb->next1->next0) {
                     toDel[bb->next0] = bb->next0->next0;
@@ -110,10 +112,10 @@ class TheCleanup {
                 }
             }
         });
-        if (function->entry->jmp() && function->entry->empty()) {
-            toDel[function->entry] = function->entry->next0;
-            function->entry = function->entry->next0;
-        }
+        // if (function->entry->jmp() && function->entry->empty()) {
+        //     toDel[function->entry] = function->entry->next0;
+        //     function->entry = function->entry->next0;
+        // }
         if (function->entry->jmp() &&
             cfg.preds(function->entry->next0).size() == 1) {
             BB* bb = function->entry;

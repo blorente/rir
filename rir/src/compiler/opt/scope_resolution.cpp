@@ -20,10 +20,7 @@ class TheScopeResolution {
         ScopeAnalysis analysis(function->env, function->arg_name,
                                function->entry);
 
-        bool needEnv = analysis.finalState[function->env].leaked;
-        if (!needEnv) {
-            needEnv = Query::noUnknownEnvAccess(function, function->env);
-        }
+        bool needEnv = !Query::doesNotNeedEnv(function);
 
         Visitor::run(function->entry, [&](BB* bb) {
             auto ip = bb->begin();

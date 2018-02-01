@@ -99,7 +99,7 @@ class TheInliner {
                 Function* fun = cls->fun;
                 if (fun->arg_name.size() != call->nCallArgs())
                     continue;
-                bool needCalleeEnv = !Query::noUnknownEnvAccess(fun, fun->env);
+                bool needCalleeEnv = !Query::doesNotNeedEnv(fun);
 
                 BB* split = BBTransform::split(++function->max_bb_id, bb, it);
 
@@ -186,6 +186,10 @@ class TheInliner {
 
                 bb = split;
                 it = split->begin();
+
+                // Can happen if split only contained the call instruction
+                if (it == split->end())
+                    break;
             }
         });
     }
