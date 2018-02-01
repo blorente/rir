@@ -2,62 +2,20 @@
 #include "../pir/pir_impl.h"
 #include "query.h"
 
-namespace rir {
-namespace pir {
+namespace {
+using namespace rir::pir;
 
-AbstractValue::AbstractValue(Value* v) : type(v->type) { vals.insert(v); }
+class TheScopeAnalysis : public StaticAnalysisForEnvironments<AbstractValue> {
+  public:
+    std::unordered_map<Instruction*, AbstractLoadVal> loads;
 
-bool AbstractValue::merge(const AbstractValue& other) {
-    assert(other.type != PirType::bottom());
+    TheScopeAnalysis(Value* localScope, const std::vector<SEXP>& args, BB* bb)
+        : StaticAnalysisForEnvironments(localScope, args, bb) {}
 
-    if (unknown)
-        return false;
-    if (type == PirType::bottom()) {
-        *this = other;
-        return true;
-    }
-    if (other.unknown) {
-        taint();
-        return true;
-    }
+    void apply(A& envs, Instruction* i) override;
+};
 
-    bool changed = false;
-    if (!std::includes(vals.begin(), vals.end(), other.vals.begin(),
-                       other.vals.end())) {
-        vals.insert(other.vals.begin(), other.vals.end());
-        changed = true;
-    }
-    if (!std::includes(args.begin(), args.end(), other.args.begin(),
-                       other.args.end())) {
-        args.insert(other.args.begin(), other.args.end());
-        changed = true;
-    }
-
-    return changed;
-}
-
-void AbstractValue::print(std::ostream& out) {
-    if (unknown) {
-        out << "??";
-        return;
-    }
-    out << "(";
-    for (auto it = vals.begin(); it != vals.end();) {
-        (*it)->printRef(out);
-        it++;
-        if (it != vals.end() && args.size() != 0)
-            out << "|";
-    }
-    for (auto it = args.begin(); it != args.end();) {
-        out << *it;
-        it++;
-        if (it != args.end())
-            out << "|";
-    }
-    out << ") : " << type;
-}
-
-void ScopeAnalysis::apply(A& envs, Instruction* i) {
+void TheScopeAnalysis::apply(A& envs, Instruction* i) {
     StVar* s = StVar::Cast(i);
     LdVar* ld = LdVar::Cast(i);
     LdArg* lda = LdArg::Cast(i);
@@ -103,9 +61,7 @@ void ScopeAnalysis::apply(A& envs, Instruction* i) {
         Value* trg = call->cls();
         MkClsFun* mkfun = MkClsFun::Cast(trg);
         if (mkfun) {
-            Function* fun = mkfun->fun;
-            if (Query::noUnknownEnvAccess(fun, fun->env))
-                return;
+            //            Function* fun = mkfun->fun;
         }
     }
 
@@ -115,6 +71,18 @@ void ScopeAnalysis::apply(A& envs, Instruction* i) {
     if (i->changesEnv()) {
         envs[i->env()].taint();
     }
+}
+}
+
+namespace rir {
+namespace pir {
+
+ScopeAnalysis::ScopeAnalysis(Value* localScope, const std::vector<SEXP>& args,
+                             BB* bb) {
+    TheScopeAnalysis analysis(localScope, args, bb);
+    analysis();
+    loads = analysis.loads;
+    finalState = analysis.exitpoint;
 }
 }
 }

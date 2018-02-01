@@ -3,7 +3,6 @@
 
 #include "../pir/bb.h"
 #include "../pir/function.h"
-#include "../pir/pir.h"
 #include "../util/visitor.h"
 #include "R/r.h"
 
@@ -91,9 +90,13 @@ class StaticAnalysis {
     BB* entry;
 
     StaticAnalysis(BB* entry) : entry(entry) {}
+    StaticAnalysis(BB* entry, const AbstractState& initialState)
+        : entry(entry) {
+        mergepoint[entry->id] = initialState;
+    }
 
-    virtual void apply(AbstractState& env, Instruction* i) = 0;
-    virtual void init(AbstractState& env) = 0;
+    virtual void apply(AbstractState&, Instruction*) = 0;
+    virtual void init(AbstractState&) = 0;
 
     void operator()() {
         mergepoint.resize(entry->id + 5);

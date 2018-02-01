@@ -19,9 +19,8 @@ class TheScopeResolution {
     void operator()() {
         ScopeAnalysis analysis(function->env, function->arg_name,
                                function->entry);
-        analysis();
 
-        bool needEnv = analysis.exitpoint[function->env].leaked;
+        bool needEnv = analysis.finalState[function->env].leaked;
         if (!needEnv) {
             needEnv = Query::noUnknownEnvAccess(function, function->env);
         }

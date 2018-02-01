@@ -91,10 +91,12 @@ class TheCleanup {
                 d->next0 = nullptr;
                 d->next1 = nullptr;
                 toDel[d] = nullptr;
-            } else
-                // Remove empty jump-through blocks
-                if (bb->jmp() && bb->next0->empty() && bb->next0->jmp() &&
-                    cfg.preds(bb->next0->next0).size() == 1) {
+            }
+        });
+        Visitor::run(function->entry, [&](BB* bb) {
+            // Remove empty jump-through blocks
+            if (bb->jmp() && bb->next0->empty() && bb->next0->jmp() &&
+                cfg.preds(bb->next0->next0).size() == 1) {
                 toDel[bb->next0] = bb->next0->next0;
             } else
                 // Remvove empty branches

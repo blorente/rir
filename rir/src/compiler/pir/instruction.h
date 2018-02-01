@@ -2,6 +2,7 @@
 #define COMPILER_INSTRUCTION_H
 
 #include "R/r.h"
+#include "instruction_list.h"
 #include "pir.h"
 #include "value.h"
 
@@ -11,70 +12,11 @@
 #include <functional>
 #include <iostream>
 
-#define COMPILER_INSTRUCTIONS(V)                                               \
-    V(LdFun)                                                                   \
-    V(LdVar)                                                                   \
-    V(LdConst)                                                                 \
-    V(LdArg)                                                                   \
-    V(StVar)                                                                   \
-    V(Branch)                                                                  \
-    V(Phi)                                                                     \
-    V(AsLogical)                                                               \
-    V(AsTest)                                                                  \
-    V(Return)                                                                  \
-    V(MkArg)                                                                   \
-    V(MkCls)                                                                   \
-    V(MkClsFun)                                                                \
-    V(ChkMissing)                                                              \
-    V(ChkClosure)                                                              \
-    V(Call)                                                                    \
-    V(CallBuiltin)                                                             \
-    V(MkEnv)                                                                   \
-    V(Lte)                                                                     \
-    V(Gte)                                                                     \
-    V(LAnd)                                                                    \
-    V(LOr)                                                                     \
-    V(Mod)                                                                     \
-    V(Add)                                                                     \
-    V(Div)                                                                     \
-    V(Colon)                                                                   \
-    V(Pow)                                                                     \
-    V(Sub)                                                                     \
-    V(Mul)                                                                     \
-    V(Inc)                                                                     \
-    V(Not)                                                                     \
-    V(Lt)                                                                      \
-    V(Gt)                                                                      \
-    V(Neq)                                                                     \
-    V(Eq)                                                                      \
-    V(Length)                                                                  \
-    V(IndexAccess)                                                             \
-    V(IndexWrite)                                                              \
-    V(Force)
-
 namespace rir {
 namespace pir {
 
 class BB;
 class Function;
-
-enum class ITag : uint8_t {
-#define V(I) I,
-    COMPILER_INSTRUCTIONS(V)
-#undef V
-};
-
-static const char* InstructionName(ITag tag) {
-    switch (tag) {
-#define V(I)                                                                   \
-    case ITag::I:                                                              \
-        return #I;
-        COMPILER_INSTRUCTIONS(V)
-#undef V
-    }
-    assert(false);
-    return "";
-}
 
 class Instruction : public Value {
   protected:
@@ -93,7 +35,7 @@ class Instruction : public Value {
     virtual Instruction* clone() = 0;
 
     typedef std::pair<unsigned, unsigned> Id;
-    const ITag tag;
+    const Tag tag;
     BB* bb_;
     BB* bb() {
         assert(bb_);
@@ -101,7 +43,7 @@ class Instruction : public Value {
     }
     void bb(bbMaybe maybe) override { return maybe(bb()); }
 
-    Instruction(ITag tag, PirType t) : Value(t, Kind::instruction), tag(tag) {}
+    Instruction(Tag tag, PirType t) : Value(t, tag), tag(tag) {}
     virtual ~Instruction() {}
 
     Id id();
@@ -109,7 +51,7 @@ class Instruction : public Value {
     typedef std::function<void(Value*, PirType)> arg_iterator;
     typedef std::function<Value*(Value*, PirType)> arg_map_iterator;
 
-    const char* name() { return InstructionName(tag); }
+    const char* name() { return TagToStr(tag); }
 
     void replaceUsesWith(Value* val);
     bool unused();
@@ -172,7 +114,7 @@ enum class Effect : uint8_t {
     Any,
 };
 
-template <ITag class_tag, class Base, Effect EFFECT, EnvAccess ENV>
+template <Tag class_tag, class Base, Effect EFFECT, EnvAccess ENV>
 class InstructionDescription : public Instruction {
   public:
     InstructionDescription(PirType return_type)
@@ -191,13 +133,7 @@ class InstructionDescription : public Instruction {
         return new Base(*static_cast<Base*>(this));
     }
 
-    static Base* Cast(Value* v) {
-        if (v->kind == Kind::instruction)
-            return Cast(static_cast<Instruction*>(v));
-        return nullptr;
-    }
-
-    static Base* Cast(Instruction* i) {
+    static Base* Cast(Value* i) {
         if (i->tag == class_tag)
             return static_cast<Base*>(i);
         return nullptr;
@@ -216,7 +152,7 @@ class InstructionDescription : public Instruction {
     }
 };
 
-template <ITag class_tag, class Base, size_t ARGS, Effect EFFECT, EnvAccess ENV>
+template <Tag class_tag, class Base, size_t ARGS, Effect EFFECT, EnvAccess ENV>
 class FixedLenInstruction
     : public InstructionDescription<class_tag, Base, EFFECT, ENV> {
   private:
@@ -263,7 +199,7 @@ class FixedLenInstruction
                 (*this)[i] = a[i];
             (*this)[ARGS - 1] = RType::env;
         }
-        ArgTypesWithEnv() : std::array<PirType, ARGS>({RType::env}) {}
+        ArgTypesWithEnv() : std::array<PirType, ARGS>({{RType::env}}) {}
     };
     struct ArgsWithEnv : public std::array<Value*, ARGS> {
         ArgsWithEnv(const std::array<Value*, ARGS - 1>& a, Value* env) {
@@ -271,7 +207,7 @@ class FixedLenInstruction
                 (*this)[i] = a[i];
             (*this)[ARGS - 1] = env;
         }
-        ArgsWithEnv(Value* env) : std::array<Value*, ARGS>({env}) {}
+        ArgsWithEnv(Value* env) : std::array<Value*, ARGS>({{env}}) {}
     };
 
     FixedLenInstruction(PirType return_type, Value* env)
@@ -308,7 +244,7 @@ class FixedLenInstruction
     }
 };
 
-template <ITag class_tag, class Base, Effect EFFECT, EnvAccess ENV>
+template <Tag class_tag, class Base, Effect EFFECT, EnvAccess ENV>
 class VarLenInstruction
     : public InstructionDescription<class_tag, Base, EFFECT, ENV> {
   private:
@@ -363,7 +299,7 @@ extern std::ostream& operator<<(std::ostream& out, Instruction::Id id);
 #define FLI(type, nargs, io, env)                                              \
     type:                                                                      \
   public                                                                       \
-    FixedLenInstruction<ITag::type, type, nargs, io, env>
+    FixedLenInstruction<Tag::type, type, nargs, io, env>
 
 class FLI(LdConst, 0, Effect::None, EnvAccess::None) {
   public:
@@ -555,7 +491,7 @@ SAFE_UNOP(Length);
 #define VLI(type, io, env)                                                     \
     type:                                                                      \
   public                                                                       \
-    VarLenInstruction<ITag::type, type, io, env>
+    VarLenInstruction<Tag::type, type, io, env>
 
 class VLI(Call, Effect::Any, EnvAccess::Leak) {
   public:

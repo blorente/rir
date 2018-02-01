@@ -3,6 +3,7 @@
 
 #include "../analysis/generic_static_analysis.h"
 #include "../pir/pir.h"
+#include "abstract_value.h"
 
 #include <algorithm>
 #include <set>
@@ -11,62 +12,13 @@
 namespace rir {
 namespace pir {
 
-struct AbstractValue {
-    bool unknown = false;
+class ScopeAnalysis {
+    typedef StaticAnalysisForEnvironments<AbstractValue> Instance;
 
-    std::set<Value*> vals;
-    std::set<size_t> args;
-
-    PirType type = PirType::bottom();
-
-    AbstractValue(PirType t = PirType::bottom()) : type(t) {}
-    AbstractValue(Value* v);
-
-    static AbstractValue arg(size_t id) {
-        AbstractValue v(PirType::any());
-        v.args.insert(id);
-        return v;
-    }
-
-    static AbstractValue tainted() {
-        AbstractValue v(PirType::any());
-        v.taint();
-        return v;
-    }
-
-    void taint() {
-        vals.clear();
-        args.clear();
-        unknown = true;
-        type = PirType::any();
-    }
-
-    bool isUnknown() const { return unknown; }
-
-    bool singleValue() {
-        if (unknown)
-            return false;
-        return vals.size() == 1 && args.size() == 0;
-    }
-    bool singleArg() {
-        if (unknown)
-            return false;
-        return args.size() == 1 && vals.size() == 0;
-    }
-
-    bool merge(const AbstractValue& other);
-
-    void print(std::ostream& out = std::cout);
-};
-
-class ScopeAnalysis : public StaticAnalysisForEnvironments<AbstractValue> {
   public:
-    std::unordered_map<Instruction*, AbstractLoadVal> loads;
-
-    ScopeAnalysis(Value* localScope, const std::vector<SEXP>& args, BB* bb)
-        : StaticAnalysisForEnvironments(localScope, args, bb) {}
-
-    void apply(A& envs, Instruction* i) override;
+    std::unordered_map<Instruction*, Instance::AbstractLoadVal> loads;
+    Instance::A finalState;
+    ScopeAnalysis(Value* localScope, const std::vector<SEXP>& args, BB* bb);
 };
 }
 }

@@ -520,8 +520,8 @@ void PirCompiler::compileFunction(SEXP f) {
     TheCompiler cmp;
     cmp(f);
 
-    //    std::cout << "------ Compiled\n";
-    //    cmp.m->print(std::cout);
+    std::cout << "============== Compiled\n";
+    cmp.m->print(std::cout);
 
     for (auto f : cmp.m->function) {
         ScopeResolution::apply(f);
@@ -530,16 +530,14 @@ void PirCompiler::compileFunction(SEXP f) {
         Cleanup::apply(f);
     }
 
-    //    std::cout << "------ Scope Resolution\n";
-    //    cmp.m->print(std::cout);
     for (size_t iter = 0; iter < 5; ++iter) {
 
         for (auto f : cmp.m->function) {
             Inline::apply(f);
         }
 
-        //    std::cout << "------ Inlined\n";
-        //    cmp.m->print(std::cout);
+        std::cout << "========= " << iter << " == Inlined\n";
+        cmp.m->print(std::cout);
 
         for (auto f : cmp.m->function) {
             ScopeResolution::apply(f);
@@ -547,9 +545,12 @@ void PirCompiler::compileFunction(SEXP f) {
             ScopeResolution::apply(f);
             Cleanup::apply(f);
         }
+
+        std::cout << "========= " << iter << " == Scope Resolution\n";
+        cmp.m->print(std::cout);
     }
 
-    //    std::cout << "------ Scope Resolution\n";
+    std::cout << "============== Final\n";
     cmp.m->print(std::cout);
 
     delete cmp.m;

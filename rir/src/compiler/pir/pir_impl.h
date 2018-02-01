@@ -8,5 +8,6 @@
 #include "module.h"
 #include "pir.h"
 #include "promise.h"
+#include "singleton_values.h"
 
 #endif

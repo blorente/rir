@@ -34,7 +34,7 @@ BB* BBTransform::clone(size_t* id_counter, BB* src) {
     Visitor::run(newEntry, [&](BB* bb) {
         for (auto i : *bb)
             i->map_arg([&](Value* v, PirType) {
-                if (v->kind == Kind::instruction)
+                if (v->tag != Tag::Value)
                     return relocation_table[v];
                 else
                     return v;

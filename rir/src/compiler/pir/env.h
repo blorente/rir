@@ -1,6 +1,7 @@
 #ifndef COMPILER_ENV_H
 #define COMPILER_ENV_H
 
+#include "instruction_list.h"
 #include "value.h"
 
 #include <iostream>
@@ -19,7 +20,7 @@ class Env : public Value {
     Env* parent;
 
     Env(Env* parent = nullptr)
-        : Value(RType::env, Kind::value), envId(envIdCount++), parent(parent) {}
+        : Value(RType::env, Tag::Value), envId(envIdCount++), parent(parent) {}
     void printRef(std::ostream& out) override;
 };
 }
