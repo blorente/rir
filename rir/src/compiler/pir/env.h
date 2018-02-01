@@ -2,6 +2,7 @@
 #define COMPILER_ENV_H
 
 #include "instruction_list.h"
+#include "tag.h"
 #include "value.h"
 
 #include <iostream>
@@ -20,8 +21,8 @@ class Env : public Value {
     Env* parent;
 
     Env(Env* parent = nullptr)
-        : Value(RType::env, Tag::Value), envId(envIdCount++), parent(parent) {}
-    void printRef(std::ostream& out) override;
+        : Value(RType::env, Tag::Env), envId(envIdCount++), parent(parent) {}
+    void printRef(std::ostream& out);
 };
 }
 }

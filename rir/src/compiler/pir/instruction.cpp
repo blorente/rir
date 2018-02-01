@@ -11,21 +11,6 @@ extern "C" SEXP deparse1line(SEXP call, Rboolean abbrev);
 namespace rir {
 namespace pir {
 
-const char* TagToStr(Tag tag) {
-    switch (tag) {
-#define V(I)                                                                   \
-    case Tag::I:                                                               \
-        return #I;
-        COMPILER_INSTRUCTIONS(V)
-#undef V
-    case Tag::Value:
-    case Tag::Unused:
-        assert(false);
-    }
-    assert(false);
-    return "";
-}
-
 extern std::ostream& operator<<(std::ostream& out, Instruction::Id id) {
     out << std::get<0>(id) << "." << std::get<1>(id);
     return out;

@@ -18,10 +18,8 @@ class Value {
     PirType type;
     Tag tag;
     Value(PirType type, Tag tag) : type(type), tag(tag) {}
-    virtual void printRef(std::ostream& out) = 0;
-    typedef std::function<void(BB*)> bbMaybe;
-    virtual void bb(bbMaybe){};
-    virtual ~Value(){};
+    void printRef(std::ostream& out);
+    bool isInstruction();
 };
 
 }

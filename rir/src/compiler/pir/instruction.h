@@ -4,6 +4,7 @@
 #include "R/r.h"
 #include "instruction_list.h"
 #include "pir.h"
+#include "tag.h"
 #include "value.h"
 
 #include <array>
@@ -20,6 +21,7 @@ class Function;
 
 class Instruction : public Value {
   protected:
+    // TODO: find easy way to make instr not virtual...
     virtual Value** args() = 0;
     virtual const PirType* types() = 0;
 
@@ -35,15 +37,13 @@ class Instruction : public Value {
     virtual Instruction* clone() = 0;
 
     typedef std::pair<unsigned, unsigned> Id;
-    const Tag tag;
     BB* bb_;
     BB* bb() {
         assert(bb_);
         return bb_;
     }
-    void bb(bbMaybe maybe) override { return maybe(bb()); }
 
-    Instruction(Tag tag, PirType t) : Value(t, tag), tag(tag) {}
+    Instruction(Tag tag, PirType t) : Value(t, tag) {}
     virtual ~Instruction() {}
 
     Id id();
@@ -69,7 +69,7 @@ class Instruction : public Value {
     }
 
     void print(std::ostream& = std::cout);
-    void printRef(std::ostream& out) override;
+    void printRef(std::ostream& out);
 
     Value* arg(size_t pos, Value* v) {
         assert(pos < nargs() && "This instruction has less arguments");

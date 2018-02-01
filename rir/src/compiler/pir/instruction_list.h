@@ -1,12 +1,6 @@
 #ifndef COMPILER_INSTRUCTION_LIST_H
 #define COMPILER_INSTRUCTION_LIST_H
 
-#include <array>
-#include <cassert>
-#include <cstdint>
-#include <functional>
-#include <iostream>
-
 #define COMPILER_INSTRUCTIONS(V)                                               \
     V(LdFun)                                                                   \
     V(LdVar)                                                                   \
@@ -47,20 +41,5 @@
     V(IndexAccess)                                                             \
     V(IndexWrite)                                                              \
     V(Force)
-
-namespace rir {
-namespace pir {
-
-enum class Tag : uint8_t {
-    Unused,
-    Value,
-#define V(I) I,
-    COMPILER_INSTRUCTIONS(V)
-#undef V
-};
-
-const char* TagToStr(Tag t);
-}
-}
 
 #endif

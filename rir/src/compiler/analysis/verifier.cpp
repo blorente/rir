@@ -79,16 +79,16 @@ bool Verifier::verify(Instruction* i, BB* bb) {
             success = false;
         }
         if (!Phi::Cast(i)) {
-            v->bb([&](BB* valueBB) {
-                // if (valueBB != bb) {
-                //     std::cerr << "Error at instruction '";
-                //     i->print(std::cerr);
-                //     std::cerr << "': Value ";
-                //     v->printRef(std::cerr);
-                //     std::cerr << " does not come from the same BB\n";
-                //     success = false;
-                // }
-            });
+            // v->bb([&](BB* valueBB) {
+            // if (valueBB != bb) {
+            //     std::cerr << "Error at instruction '";
+            //     i->print(std::cerr);
+            //     std::cerr << "': Value ";
+            //     v->printRef(std::cerr);
+            //     std::cerr << " does not come from the same BB\n";
+            //     success = false;
+            // }
+            // });
         }
     });
     return success;

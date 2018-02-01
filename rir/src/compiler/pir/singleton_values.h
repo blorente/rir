@@ -2,6 +2,7 @@
 #define COMPILER_SINGLETON_VALUES_H
 
 #include "instruction_list.h"
+#include "tag.h"
 #include "value.h"
 
 #include <functional>
@@ -13,7 +14,7 @@ namespace pir {
 template <typename T>
 class SingletonValue : public Value {
   public:
-    SingletonValue(PirType t) : Value(t, Tag::Value) {}
+    SingletonValue(PirType t, Tag tag) : Value(t, tag) {}
     static T* instance() {
         static T i;
         return &i;
@@ -22,20 +23,20 @@ class SingletonValue : public Value {
 
 class Nil : public SingletonValue<Nil> {
   public:
-    void printRef(std::ostream& out) override { out << "nil"; }
+    void printRef(std::ostream& out) { out << "nil"; }
 
   private:
     friend class SingletonValue;
-    Nil() : SingletonValue(RType::nil) {}
+    Nil() : SingletonValue(RType::nil, Tag::Nil) {}
 };
 
 class Missing : public SingletonValue<Missing> {
   public:
-    void printRef(std::ostream& out) override { out << "missing"; }
+    void printRef(std::ostream& out) { out << "missing"; }
 
   private:
     friend class SingletonValue;
-    Missing() : SingletonValue(PirType::missing()) {}
+    Missing() : SingletonValue(PirType::missing(), Tag::Missing) {}
 };
 }
 }
