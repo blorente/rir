@@ -145,3 +145,5 @@ Currently we assume that there are no objects. If we add that to the picture it 
 No named args, no default args implemented.
 
 `Instruction` has virtual methods, would be nice to get rid of them, not sure how.
+
+`Phi` instructions do not record where inputs are coming from. So for example in `x <- 1; if (y) x <- 2; x` the phi looks a bit strange, as it refers to both stores, but the first one dominates both branches. I guess we'll see later when we write the backend, or more potent optimizations if this is an issue or not. Tracking the incoming branches to phi is a pain...
