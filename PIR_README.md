@@ -41,8 +41,8 @@ The design goals are:
 
 * Everithing is explicit
 * Side-effects get their own instructions
-  (e.g. Force evaluates promise, AsTest prints a warning if the logical vector has more than size 1)
-* Types guide instruction selection. For example `val^` is a value that might be lazy, `lgl^` is a logical that might be lazy.
+  (e.g. `Force` evaluates promise, `AsTest` prints a warning if the logical vector has more than size 1)
+* Types guide instruction selection and inform about whether a variable has been forced. For example `val^` is a value that might be lazy, `lgl^` is a logical that might be lazy.
   `val?` is a value that might be missing, which can happen in edge-cases (capturing a promise of a missing function argument).
 * Functions have a default environment that is created by invocation, but they can contain explicit inner environments, inherited from inlinees.
 
@@ -75,7 +75,7 @@ Promises are created by `MkArg(missing, Prom(0), env_2)` which references:
 
 By default functions have one environment. If no instruction leaks the environment and all variables can be resolved, we can get rid of all stores and inline without additional environments.
 Otherwise, we have the option to explicitly create them.
-For example we might want to inline the function f in:
+For example we might want to inline the function `f` in:
 
 ```
 function() {
@@ -106,10 +106,11 @@ BB 2
 
 ### Type of promises
 
-The type `promise` is something different than `value^`.
+The type `prom` is different than `val^`.
 The former is a promise in value position, the later is a promise in argument position.
-For example in the function call `quack(x)` a promise of type `promise` needs to be passed, on the other hand `function(x) {...}` the argument `x` has type `val^`, we are supposed to evaluate it, when accessing the local variable `x`.
-The type `promise^` represents a promise that evaluates to a promise (yes that is possible...).
+For example in `quack(x)` the call instruction expect a value of type `prom` (ie. `Call(..., MkArg("x"))`).
+On the other hand in `function(x) {...}` the argument `x` has type `val^`, since we are supposed to evaluate it, when accessing the local variable `x`.
+The type `prom^` represents a promise that evaluates to a promise (yes that is possible...).
 
 ## Status
 
@@ -128,3 +129,19 @@ Use `pir.compile` to compile from RIR to PIR. For example `pir.compile(rir.compi
 * Instructions `belong` to one basic block. There is an api for moving instructions, or cloning BBs.
 * The compiler compiles broken types, then there is an `insert_cast` pass that inserts casts. This style was easier to implement so far. Not sure if it's the right thing to do.
 * Basic blocks (BB) are arrays of instruction pointers. Every BB has either a `Return` instruction at the end and no successors, a `Branch` instruction at the end and two successors, or one successor to which it implicitly and unconditionally jumps.
+
+## Issues/Questions
+
+Very quickly we'll find a place that leaks the environment and we are doomed. We need to explore different strategies there.
+
+A value of type `val^` is actually a heap reference and applying `Force` to it modifies that heap location. But since `Force` is idempotent it should be ok, to force it multiple times. But a better understanding of why and how it is ok needs to be developed. 
+
+Sometimes we do not know if an argument was already forced or not. For example in `function (x) {if(y) x else 1; x}` we do not know at the end if `x` was already forced. Currently we create a promise for x, even if we inline that function.
+
+The modeling of missing is not very accurate at the moment.
+
+Currently we assume that there are no objects. If we add that to the picture it will become more annoying, since even things like `+`, even if bound to the default `+` primitive, might execute random code.
+
+No named args, no default args implemented.
+
+`Instruction` has virtual methods, would be nice to get rid of them, not sure how.
