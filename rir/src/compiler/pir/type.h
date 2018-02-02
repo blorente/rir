@@ -144,10 +144,7 @@ struct PirType {
         if (!rtype_) {
             return t_.n.includes(o.t_.n);
         }
-        if (t_.r == o.t_.r) {
-            return (lazy_ || !o.lazy_) && (missing_ || !o.missing_);
-        }
-        if (lazy_ != o.lazy_ || missing_ != o.missing_) {
+        if ((!lazy_ && o.lazy_) || (!missing_ && o.missing_)) {
             return false;
         }
         return t_.r.includes(o.t_.r);

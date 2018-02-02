@@ -96,10 +96,10 @@ class TheInliner {
                 MkClsFun* cls = MkClsFun::Cast(call->cls());
                 if (!cls)
                     continue;
-                Function* fun = cls->fun;
-                if (fun->arg_name.size() != call->nCallArgs())
+                Function* inlinee = cls->fun;
+                if (inlinee->arg_name.size() != call->nCallArgs())
                     continue;
-                bool needCalleeEnv = !Query::doesNotNeedEnv(fun);
+                bool needCalleeEnv = !Query::doesNotNeedEnv(inlinee);
 
                 BB* split = BBTransform::split(++function->max_bb_id, bb, it);
 
@@ -111,11 +111,12 @@ class TheInliner {
                     arguments.push_back(a);
                 }
 
-                BB* copy = BBTransform::clone(&function->max_bb_id, fun->entry);
+                BB* copy =
+                    BBTransform::clone(&function->max_bb_id, inlinee->entry);
                 bb->next0 = copy;
 
                 // Find evaluation dominance order of LdArgs
-                PromEvalAnalysis promeval(fun->arg_name.size(), copy);
+                PromEvalAnalysis promeval(inlinee->arg_name.size(), copy);
                 promeval();
 
                 std::unordered_map<Instruction*, Value*> promiseResult;
@@ -141,6 +142,8 @@ class TheInliner {
                             bb->next0 = prom_copy;
                             Value* promRes =
                                 BBTransform::forInline(prom_copy, split);
+                            Replace::usesOfValue(prom_copy, prom->env,
+                                                 a->env());
                             promiseResult[i] = promRes;
                             it = split->begin();
                             ld = LdArg::Cast(*it);
@@ -154,20 +157,42 @@ class TheInliner {
                     }
                 });
 
+                std::unordered_map<size_t, size_t> copiedPromises;
                 Visitor::run(copy, [&](BB* bb) {
                     for (auto it = bb->begin(); it != bb->end(); it++) {
                         LdArg* ld = LdArg::Cast(*it);
-                        if (!ld)
-                            continue;
-                        MkArg* a = arguments[ld->id];
-                        Instruction* dominatingLoad =
-                            promeval.exitpoint[ld->id];
-                        if (promiseResult.count(dominatingLoad))
-                            ld->replaceUsesWith(
-                                promiseResult.at(dominatingLoad));
-                        else
-                            ld->replaceUsesWith(a);
-                        it = bb->remove(it);
+                        MkArg* mk = MkArg::Cast(*it);
+                        if (ld) {
+                            MkArg* a = arguments[ld->id];
+                            Instruction* dominatingLoad =
+                                promeval.exitpoint[ld->id];
+                            if (promiseResult.count(dominatingLoad))
+                                ld->replaceUsesWith(
+                                    promiseResult.at(dominatingLoad));
+                            else
+                                ld->replaceUsesWith(a);
+                            it = bb->remove(it);
+                        } else if (mk) {
+                            Promise* prom = mk->prom;
+                            if (prom->fun == inlinee) {
+                                if (copiedPromises.count(prom->id)) {
+                                    mk->prom =
+                                        function
+                                            ->promise[copiedPromises[prom->id]];
+                                } else {
+                                    BB* promCopy =
+                                        BBTransform::clone(prom->entry);
+                                    Promise* clone =
+                                        new Promise(prom->env, function,
+                                                    function->promise.size());
+                                    clone->id = function->promise.size();
+                                    function->promise.push_back(clone);
+                                    clone->entry = promCopy;
+                                    copiedPromises[prom->id] = clone->id;
+                                    mk->prom = clone;
+                                }
+                            }
+                        }
                         if (it == bb->end())
                             return;
                     }
@@ -176,10 +201,10 @@ class TheInliner {
                 Value* inlineeRes = BBTransform::forInline(copy, split);
                 newCall->replaceUsesWith(inlineeRes);
                 if (needCalleeEnv) {
-                    MkEnv* env = new MkEnv(cls->env(), fun->arg_name,
+                    MkEnv* env = new MkEnv(cls->env(), inlinee->arg_name,
                                            newCall->callArgs());
                     copy->insert(copy->begin(), env);
-                    Replace::usesOfValue(copy, fun->env, env);
+                    Replace::usesOfValue(copy, inlinee->env, env);
                 }
                 // Remove the call instruction
                 split->remove(split->begin());

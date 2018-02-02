@@ -13,7 +13,9 @@ BB* BBTransform::clone(size_t* id_counter, BB* src) {
     // Copy instructions
     std::unordered_map<Value*, Value*> relocation_table;
     Visitor::run(src, [&](BB* bb) {
-        BB* theClone = BB::cloneInstrs(bb);
+        *id_counter = *id_counter + 1;
+        BB* theClone = BB::cloneInstrs(bb, *id_counter);
+        assert(bb->size() == theClone->size());
         if (bb->id >= bbs.size())
             bbs.resize(bb->id + 5);
         bbs[bb->id] = theClone;
@@ -34,13 +36,13 @@ BB* BBTransform::clone(size_t* id_counter, BB* src) {
     Visitor::run(newEntry, [&](BB* bb) {
         for (auto i : *bb)
             i->map_arg([&](Value* v, PirType) {
-                if (v->isInstruction())
-                    return relocation_table[v];
-                else
+                if (v->isInstruction()) {
+                    assert(relocation_table.count(v));
+                    return relocation_table.at(v);
+                } else {
                     return v;
+                }
             });
-        *id_counter = *id_counter + 1;
-        bb->id = *id_counter;
     });
 
     return newEntry;

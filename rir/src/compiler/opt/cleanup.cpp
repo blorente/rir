@@ -69,6 +69,32 @@ class TheCleanup {
             }
         });
 
+        // Recursively serach promises for referencs to other promises
+        std::deque<Promise*> todo;
+        for (size_t i = 0; i < function->promise.size(); ++i) {
+            Promise* p = function->promise[i];
+            if (p && used_p.find(i) != used_p.end()) {
+                todo.push_back(p);
+            }
+        }
+        while (!todo.empty()) {
+            Promise* p = todo.back();
+            todo.pop_back();
+            Visitor::run(p->entry, [&](BB* bb) {
+                for (auto i : *bb) {
+                    MkArg* mk = MkArg::Cast(i);
+                    if (mk) {
+                        size_t id = mk->prom->id;
+                        if (used_p.find(id) == used_p.end()) {
+                            // found a new used promise...
+                            todo.push_back(mk->prom);
+                            used_p.insert(mk->prom->id);
+                        }
+                    }
+                }
+            });
+        }
+
         for (size_t i = 0; i < function->promise.size(); ++i) {
             if (function->promise[i] && used_p.find(i) == used_p.end()) {
                 delete function->promise[i];
@@ -142,8 +168,9 @@ class TheCleanup {
 
         // Renumber
         function->max_bb_id = 0;
-        Visitor::run(function->entry,
-                     [&](BB* bb) { bb->id = function->max_bb_id++; });
+        Visitor::runWithChangingIds(function->entry, [&](BB* bb) {
+            bb->unsafeSetId(function->max_bb_id++);
+        });
         function->max_bb_id--;
     }
 };

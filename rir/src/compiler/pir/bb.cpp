@@ -40,8 +40,8 @@ BB::Instrs::iterator BB::moveTo(Instrs::iterator it, BB* other) {
     return instr.erase(it);
 }
 
-BB* BB::cloneInstrs(BB* src) {
-    BB* c = new BB(src->id);
+BB* BB::cloneInstrs(BB* src, unsigned id) {
+    BB* c = new BB(id);
     for (auto i : src->instr) {
         Instruction* ic = i->clone();
         ic->bb_ = c;

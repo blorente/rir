@@ -18,7 +18,7 @@ void Function::print(std::ostream& out) {
 }
 
 Promise* Function::createProm() {
-    Promise* p = new Promise(env, promise.size());
+    Promise* p = new Promise(env, this, promise.size());
     promise.push_back(p);
     return p;
 }

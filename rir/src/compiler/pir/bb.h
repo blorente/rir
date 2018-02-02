@@ -12,7 +12,8 @@ namespace pir {
 
 class BB {
   public:
-    unsigned id;
+    // The visitor relies on stable ids, do not renumber inside a visitor!!!
+    const unsigned id;
 
     BB(const BB&) = delete;
     void operator=(const BB&) = delete;
@@ -20,7 +21,9 @@ class BB {
     BB(unsigned id);
     ~BB();
 
-    static BB* cloneInstrs(BB* src);
+    static BB* cloneInstrs(BB* src, unsigned id);
+
+    void unsafeSetId(unsigned newId) { *const_cast<unsigned*>(&id) = newId; }
 
     unsigned indexOf(Instruction* i) {
         unsigned p = 0;

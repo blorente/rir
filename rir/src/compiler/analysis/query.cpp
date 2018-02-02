@@ -19,7 +19,7 @@ bool Query::doesNotNeedEnv(Code* c) {
         for (auto i : *bb) {
             LdVar* ld = LdVar::Cast(i);
             LdFun* ldf = LdFun::Cast(i);
-            if (ld && ldf) {
+            if (ld || ldf) {
                 return false;
             } else if (i->leaksEnv()) {
                 return false;

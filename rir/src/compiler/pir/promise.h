@@ -9,7 +9,8 @@ namespace pir {
 class Promise : public Code {
   public:
     unsigned id;
-    Promise(Env* e, unsigned id) : Code(e), id(id) {}
+    Function* fun;
+    Promise(Env* e, Function* fun, unsigned id) : Code(e), id(id), fun(fun) {}
     void print(std::ostream& out = std::cout) {
         out << "Prom " << id << ":\n";
         Code::print(out);

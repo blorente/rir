@@ -27,6 +27,7 @@ struct AbstractEnvironment {
 
     bool leaked = false;
     bool tainted = false;
+    bool mergedWith = false;
 
     void taint() {
         tainted = true;
@@ -69,8 +70,14 @@ struct AbstractEnvironment {
         for (auto e : other.entries)
             keys.insert(std::get<0>(e));
         for (auto n : keys) {
-            if (entries[n].merge(other.get(n)))
+            // if this is not the first incomming edge and it has more entries
+            // we are in trouble.
+            if (mergedWith && !entries.count(n)) {
+                entries[n].taint();
                 changed = true;
+            } else if (entries[n].merge(other.get(n))) {
+                changed = true;
+            }
         }
 
         std::set<Value*> fps;
@@ -90,6 +97,8 @@ struct AbstractEnvironment {
             parentEnv = other.parentEnv;
             changed = true;
         }
+
+        mergedWith = true;
         return changed;
     }
 };

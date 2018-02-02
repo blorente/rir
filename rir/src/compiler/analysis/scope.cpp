@@ -7,16 +7,33 @@ using namespace rir::pir;
 
 class TheScopeAnalysis : public StaticAnalysisForEnvironments<AbstractValue> {
   public:
+    static constexpr size_t maxDepth = 5;
+    size_t depth;
+    Call* invocation = nullptr;
+
     std::unordered_map<Instruction*, AbstractLoadVal> loads;
     std::unordered_map<Value*, Function*> functions;
 
     TheScopeAnalysis(Value* localScope, const std::vector<SEXP>& args, BB* bb)
-        : StaticAnalysisForEnvironments(localScope, args, bb) {}
+        : StaticAnalysisForEnvironments(localScope, args, bb), depth(0) {}
     TheScopeAnalysis(Value* localScope, const std::vector<SEXP>& args, BB* bb,
-                     const A& initialState)
-        : StaticAnalysisForEnvironments(localScope, args, bb, initialState) {}
+                     const A& initialState, Call* invocation, size_t depth)
+        : StaticAnalysisForEnvironments(localScope, args, bb, initialState),
+          depth(depth), invocation(invocation) {}
 
     void apply(A& envs, Instruction* i) override;
+    void init(A& initial) override {
+        if (invocation) {
+            E& env = initial[localScope];
+            if (args.size() == invocation->nCallArgs()) {
+                for (size_t i = 0; i < invocation->nCallArgs(); ++i) {
+                    env.set(args[i], invocation->callArgs()[i]);
+                }
+                return;
+            }
+        }
+        StaticAnalysisForEnvironments::init(initial);
+    }
 };
 
 void TheScopeAnalysis::apply(A& envs, Instruction* i) {
@@ -24,7 +41,6 @@ void TheScopeAnalysis::apply(A& envs, Instruction* i) {
     LdVar* ld = LdVar::Cast(i);
     LdArg* lda = LdArg::Cast(i);
     LdFun* ldf = LdFun::Cast(i);
-    Force* force = Force::Cast(i);
     MkEnv* mk = MkEnv::Cast(i);
     Call* call = Call::Cast(i);
 
@@ -46,31 +62,17 @@ void TheScopeAnalysis::apply(A& envs, Instruction* i) {
         mk->eachLocalVar(
             [&](SEXP name, Value* val) { envs[mk].set(name, val); });
         handled = true;
-    } else if (force) {
-        Value* v = force->arg<0>();
-        ld = LdVar::Cast(v);
-        lda = LdArg::Cast(v);
-        if (ld) {
-            if (!envs[ld->env()].get(ld->varName).isUnknown())
-                envs[ld->env()].set(ld->varName, force);
-        } else if (lda) {
-            SEXP name = args[lda->id];
-            if (!envs[lda->env()].get(name).isUnknown())
-                envs[lda->env()].set(name, force);
-        }
-        if (PirType::val() >= v->type) {
-            handled = true;
-        }
     } else if (s) {
         envs[s->env()].set(s->varName, s->val());
         handled = true;
-    } else if (call) {
+    } else if (call && depth < maxDepth) {
         Value* trg = call->cls();
         Function* fun = envs.findFunction(i->env(), trg);
         if (fun != UnknownFunction) {
             if (envs[fun->env].parentEnv == UninitializedParent)
                 envs[fun->env].parentEnv = i->env();
-            TheScopeAnalysis nextFun(fun->env, fun->arg_name, fun->entry, envs);
+            TheScopeAnalysis nextFun(fun->env, fun->arg_name, fun->entry, envs,
+                                     call, depth + 1);
             nextFun();
             envs.merge(nextFun.exitpoint);
             handled = true;

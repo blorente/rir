@@ -20,7 +20,7 @@ class Visitor {
     static void run(BB* bb, BBAction action) {
         BB* cur = bb;
         std::deque<BB*> todo;
-        std::vector<bool> done(128, false);
+        std::vector<bool> done(64, false);
         ok(done, cur);
 
         while (cur) {
@@ -99,6 +99,47 @@ class Visitor {
         assert(todo.empty());
 
         return true;
+    }
+
+    // This visitor does not rely on stable bb ids, use for renumbering
+    static void runWithChangingIds(BB* bb, BBAction action) {
+        BB* cur = bb;
+        std::deque<BB*> todo;
+        std::set<BB*> done;
+        done.insert(cur);
+
+        while (cur) {
+            BB* next = nullptr;
+
+            if (cur->next0 && done.find(cur->next0) == done.end()) {
+                if (todo.empty())
+                    next = cur->next0;
+                else
+                    q<true>(todo, cur->next0);
+                done.insert(cur->next0);
+            }
+
+            if (cur->next1 && done.find(cur->next1) == done.end()) {
+                if (!next && todo.empty()) {
+                    next = cur->next1;
+                } else {
+                    q<true>(todo, cur->next1);
+                }
+                done.insert(cur->next1);
+            }
+
+            if (!next) {
+                if (!todo.empty()) {
+                    next = todo.front();
+                    todo.pop_front();
+                }
+            }
+
+            action(cur);
+
+            cur = next;
+        }
+        assert(todo.empty());
     }
 
   private:
