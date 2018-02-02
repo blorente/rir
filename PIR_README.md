@@ -1,0 +1,130 @@
+# PIR
+
+Pir is the new IR for the compiler.
+
+## Overview
+
+Everything is found in `rir/src/compiler`.
+
+```
+pir                      :  The PIR ir definitions. Contains structures and the definition of all instructions
+pir_compiler.[h|cpp]     :  Compiler from RIR stack based bytecode to PIR ssa based instructions
+analysis                 :  Some static analysis
+opt                      :  Optimizations. Currently most importantly sound scope resolution and inlining
+transform, util          :  Utils
+```
+
+## IR
+
+As an example: `function(x) { if(x) 1 else 2 }` has the following PIR representation:
+
+```
+Function 0x25c7b10 env_2
+BB 0
+  val^ %0.0 = LdArg(0)
+  val %0.1 = Force (%0.0)
+  lgl %0.2 = AsLogical (%0.1)
+  t %0.3 = AsTest (%0.2)
+  void Branch %0.3, BB1, BB2
+BB 1
+  val %1.0 = LdConst [1] 2
+  goto BB 3
+BB 2
+  val %2.0 = LdConst [1] 1
+  goto BB 3
+BB 3
+  val %3.0 = Phi (%1.0, %2.0)
+  void Return (%3.0)
+```
+
+The design goals are:
+
+* Everithing is explicit
+* Side-effects get their own instructions
+  (e.g. Force evaluates promise, AsTest prints a warning if the logical vector has more than size 1)
+* Types guide instruction selection. For example `val^` is a value that might be lazy, `lgl^` is a logical that might be lazy.
+  `val?` is a value that might be missing, which can happen in edge-cases (capturing a promise of a missing function argument).
+* Functions have a default environment that is created by invocation, but they can contain explicit inner environments, inherited from inlinees.
+
+### Function Calls
+
+A function with a function call `function() { foo(x) }` looks like this:
+
+```
+Function 0x2f85e90 env_2
+BB 0
+  cls %0.0 = LdFun(foo, env_2)
+  prom %0.1 = MkArg(missing, Prom(0), env_2)
+  val^ %0.2 = Call (env_2, %0.0, %0.1)
+  val %0.3 = Force (%0.2)
+  void Return (%0.3)
+Prom 0:
+BB 0
+  val^? %0.0 = LdVar(x, env_2)
+  val %0.1 = Force (%0.0)
+  void Return (%0.1)
+```
+
+Promises are created by `MkArg(missing, Prom(0), env_2)` which references:
+
+1. an eager value (in case the argument value is already evaluated) or `missing`
+2. the code of the promise
+3. the environment of the caller
+
+### Environments
+
+By default functions have one environment. If no instruction leaks the environment and all variables can be resolved, we can get rid of all stores and inline without additional environments.
+Otherwise, we have the option to explicitly create them.
+For example we might want to inline the function f in:
+
+```
+function() {
+  f <- function() foo(x)
+  f()
+}
+```
+
+In this case the call to `foo` leaks the inner environment of `f` and we need to simulate it:
+
+```
+Function 0x28e67e0 env_2
+BB 0
+  cls %0.0 = MkClsFun(Func(0x2ab8eb0), env_2)
+  void StVar(f, %0.0, env_2)
+  env %0.2 = MkEnv (parent=env_2)
+  cls %0.3 = LdFun(foo, %0.2)
+  prom %0.4 = MkArg(missing, Prom(0), %0.2)
+  val^ %0.5 = Call (%0.2, %0.3, %0.4)
+  val %0.6 = Force (%0.5)
+  void Return (%0.6)
+Prom 0:
+BB 2
+  val^? %2.0 = LdVar(x, env_3)
+  val %2.1 = Force (%2.0)
+  void Return (%2.1)
+```
+
+### Type of promises
+
+The type `promise` is something different than `value^`.
+The former is a promise in value position, the later is a promise in argument position.
+For example in the function call `quack(x)` a promise of type `promise` needs to be passed, on the other hand `function(x) {...}` the argument `x` has type `val^`, we are supposed to evaluate it, when accessing the local variable `x`.
+The type `promise^` represents a promise that evaluates to a promise (yes that is possible...).
+
+## Status
+
+Currently PIR has no back end. We can compile, optimize and print it.
+
+## Usage
+
+Use `pir.compile` to compile from RIR to PIR. For example `pir.compile(rir.compile(function(x){ if (x) 1 else 2 }))`.
+
+## Implementation
+
+* Instruction names are defined in `pir/instruction_list.h`, the instructions (and their properties) are declared in `pir/instruction.h`.
+* Instructions are Values (they inherit from Value) and an Instruction pointer can therefore be directly used as an argument for another instruction.
+* Values have a type. Instruction argument slots are typed too. The passed value needs to be a subtype of the argument slot.
+* Every value has a `Tag`. This allows us to efficiently find out what they are. There is a tag for each instruction. To find out if something is for example a `LdArg` instruction we use `LdArg* ld = LdArg::Cast(value)` which returns a downcasted version of `value` if it is a `LdArg` instruction and `nullptr` otherwise. The implementation of `Cast` is generation by the `InstructionDescription` template and internally uses the tag.
+* Instructions `belong` to one basic block. There is an api for moving instructions, or cloning BBs.
+* The compiler compiles broken types, then there is an `insert_cast` pass that inserts casts. This style was easier to implement so far. Not sure if it's the right thing to do.
+* Basic blocks (BB) are arrays of instruction pointers. Every BB has either a `Return` instruction at the end and no successors, a `Branch` instruction at the end and two successors, or one successor to which it implicitly and unconditionally jumps.
