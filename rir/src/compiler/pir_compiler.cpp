@@ -210,9 +210,13 @@ class CodeCompiler {
             for (size_t i = 0; i < n; ++i)
                 args[n - i - 1] = pop();
 
-            assert(TYPEOF(target) == BUILTINSXP);
+            // TODO: compile a list of safe builtins
+            static int vector = findBuiltin("vector");
 
-            push(b(new CallBuiltin(b.env, getBuiltin(target), args)));
+            if (getBuiltinNr(target) == vector)
+                push(b(new CallSafeBuiltin(target, args)));
+            else
+                push(b(new CallBuiltin(b.env, target, args)));
             break;
         }
 #define BINOP(Name, Op)                                                        \

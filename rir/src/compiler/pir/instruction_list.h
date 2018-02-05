@@ -19,6 +19,7 @@
     V(ChkClosure)                                                              \
     V(Call)                                                                    \
     V(CallBuiltin)                                                             \
+    V(CallSafeBuiltin)                                                         \
     V(MkEnv)                                                                   \
     V(Lte)                                                                     \
     V(Gte)                                                                     \

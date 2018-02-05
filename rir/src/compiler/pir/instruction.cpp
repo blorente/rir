@@ -2,6 +2,7 @@
 #include "pir_impl.h"
 
 #include "../util/visitor.h"
+#include "R/Funtab.h"
 #include "utils/capture_out.h"
 
 #include <cassert>
@@ -23,6 +24,11 @@ void Instruction::print(std::ostream& out) {
         out << " = ";
     }
     printRhs(out);
+
+    if (leaksEnv())
+        out << "!";
+    else if (needsEnv())
+        out << ".";
 }
 
 void Instruction::printRef(std::ostream& out) { out << "%" << id(); };
@@ -133,6 +139,31 @@ void MkEnv::printRhs(std::ostream& out) {
 void Phi::updateType() {
     type = arg(0)->type;
     each_arg([&](Value* v, PirType t) -> void { type = type | v->type; });
+}
+
+CallSafeBuiltin::CallSafeBuiltin(SEXP builtin, const std::vector<Value*>& args)
+    : VarLenInstruction(PirType::valOrLazy()), builtin(getBuiltin(builtin)),
+      builtinId(getBuiltinNr(builtin)) {
+    for (unsigned i = 0; i < args.size(); ++i)
+        this->push_arg(PirType::val(), args[i]);
+}
+
+CallBuiltin::CallBuiltin(Value* e, SEXP builtin,
+                         const std::vector<Value*>& args)
+    : VarLenInstruction(PirType::valOrLazy(), e), builtin(getBuiltin(builtin)),
+      builtinId(getBuiltinNr(builtin)) {
+    for (unsigned i = 0; i < args.size(); ++i)
+        this->push_arg(PirType::val(), args[i]);
+}
+
+void CallBuiltin::printRhs(std::ostream& out) {
+    std::cout << name() << "[" << getBuiltinName(builtinId) << "] ";
+    printArgs(out);
+}
+
+void CallSafeBuiltin::printRhs(std::ostream& out) {
+    std::cout << name() << "[" << getBuiltinName(builtinId) << "] ";
+    printArgs(out);
 }
 }
 }

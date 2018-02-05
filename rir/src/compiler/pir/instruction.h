@@ -56,8 +56,8 @@ class Instruction : public Value {
     void replaceUsesWith(Value* val);
     bool unused();
 
-    virtual void printRhs(std::ostream& out = std::cout) {
-        out << name() << " (";
+    virtual void printArgs(std::ostream& out) {
+        out << "(";
         if (nargs() > 0) {
             for (size_t i = 0; i < nargs() - 1; ++i) {
                 arg(i)->printRef(out);
@@ -66,6 +66,11 @@ class Instruction : public Value {
             arg(nargs() - 1)->printRef(out);
         }
         out << ")";
+    }
+
+    virtual void printRhs(std::ostream& out = std::cout) {
+        out << name() << " ";
+        printArgs(out);
     }
 
     void print(std::ostream& = std::cout);
@@ -521,15 +526,13 @@ typedef SEXP (*CCODE)(SEXP, SEXP, SEXP, SEXP);
 class VLI(CallBuiltin, Effect::Any, EnvAccess::Write) {
   public:
     const CCODE builtin;
+    int builtinId;
+
     Value** callArgs() { return &args()[1]; }
     const PirType* callTypes() { return &types()[1]; }
     size_t nCallArgs() { return nargs() - 1; }
 
-    CallBuiltin(Value* e, CCODE builtin, const std::vector<Value*>& args)
-        : VarLenInstruction(PirType::valOrLazy(), e), builtin(builtin) {
-        for (unsigned i = 0; i < args.size(); ++i)
-            this->push_arg(PirType::val(), args[i]);
-    }
+    CallBuiltin(Value* e, SEXP builtin, const std::vector<Value*>& args);
 
     void eachCallArg(arg_iterator it) {
         for (size_t i = 0; i < nCallArgs(); ++i) {
@@ -538,6 +541,18 @@ class VLI(CallBuiltin, Effect::Any, EnvAccess::Write) {
             it(v, t);
         }
     }
+
+    void printRhs(std::ostream& out) override;
+};
+
+class VLI(CallSafeBuiltin, Effect::None, EnvAccess::None) {
+  public:
+    const CCODE builtin;
+    int builtinId;
+
+    CallSafeBuiltin(SEXP builtin, const std::vector<Value*>& args);
+
+    void printRhs(std::ostream& out) override;
 };
 
 class VLI(MkEnv, Effect::None, EnvAccess::Read) {
